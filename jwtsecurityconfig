@@ -1,0 +1,247 @@
+明白了，你希望在 `JwtAuthenticationWebFilter` 中使用特定的 `authenticationSuccessHandler` 和 `authenticationFailureHandler` 实现，而在表单登录中保持原有的处理逻辑不变。下面是针对这种需求的修改：
+
+### SecurityConfig.java
+
+```java
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.ServerAuthenticationEntryPointFailureHandler;
+import org.springframework.security.web.server.context.WebSessionServerSecurityContextRepository;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
+import org.springframework.web.server.WebFilter;
+
+@Configuration
+@EnableWebFluxSecurity
+public class SecurityConfig {
+
+    @Autowired
+    private JwtUtils jwtUtils;
+
+    @Autowired
+    private AuthenticationSuccessHandler authenticationSuccessHandler;
+
+    @Autowired
+    private AuthenticationFailureHandler authenticationFailureHandler;
+
+    @Autowired
+    private AuthenticationEntryPoint authenticationEntryPoint;
+
+    @Autowired
+    private AccessDeniedHandler accessDeniedHandler;
+
+    @Autowired
+    private WebSessionServerSecurityContextRepository securityContextRepository;
+
+    // JWT-specific security filter chain
+    @Bean
+    public SecurityWebFilterChain jwtSecurityWebFilterChain(ServerHttpSecurity http) {
+        return http
+                .securityMatcher(ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, "/api/authenticate"))
+                .csrf().disable()
+                .authorizeExchange()
+                .pathMatchers(HttpMethod.POST, "/api/authenticate").permitAll()
+                .anyExchange().authenticated()
+                .and()
+                .addFilterAt(jwtAuthenticationWebFilter(), SecurityWebFiltersOrder.AUTHENTICATION)
+                .build();
+    }
+
+    // General security filter chain
+    @Bean
+    public SecurityWebFilterChain defaultSecurityWebFilterChain(ServerHttpSecurity http) {
+        ServerAuthenticationEntryPointFailureHandler failureHandler =
+                new ServerAuthenticationEntryPointFailureHandler(authenticationEntryPoint);
+
+        return http
+                .csrf().disable()
+                .authorizeExchange()
+                .matchers(
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, Url.LOGIN_URL),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, Url.HEALTH_CHECK),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, USER_URL),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, USER_URL + "/super"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, USER_URL + "/forgotPassword"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, USER_URL + "/verifyPasswordResetToken"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.PUT, USER_URL + "/resetPassword"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, USER_URL + "/invite/verify"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.PUT, USER_URL + "/invite/confirm"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, USER_URL + "/me"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, USER_URL + "/features"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, ASSET_URL + "/*"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, ACTION_URL + "/**"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, ACTION_COLLECTION_URL + "/view"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, PAGE_URL + "/**"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, APPLICATION_URL + "/**"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, THEME_URL + "/**"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, ACTION_URL + "/execute"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, TENANT_URL + "/current"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, USAGE_PULSE_URL),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, CUSTOM_JS_LIB_URL + "/*/view"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, USER_URL + "/resendEmailVerification"),
+                        ServerWebExchangeMatchers.pathMatchers(
+                                HttpMethod.POST, USER_URL + "/verifyEmailVerificationToken"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, PRODUCT_ALERT + "/alert"),
+                        ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, CONSOLIDATED_API_URL))
+                .permitAll()
+                .pathMatchers("/public/**", "/oauth2/**").permitAll()
+                .anyExchange().authenticated()
+                .and()
+                .httpBasic(httpBasicSpec -> httpBasicSpec.authenticationFailureHandler(failureHandler))
+                .formLogin(formLoginSpec -> formLoginSpec
+                        .authenticationFailureHandler(failureHandler)
+                        .loginPage(Url.LOGIN_URL)
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .requiresAuthenticationMatcher(
+                                ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, Url.LOGIN_URL))
+                        .authenticationSuccessHandler(authenticationSuccessHandler)
+                        .authenticationFailureHandler(authenticationFailureHandler))
+                .oauth2Login(oAuth2LoginSpec -> oAuth2LoginSpec
+                        .authenticationFailureHandler(failureHandler)
+                        .authorizationRequestResolver(new CustomServerOAuth2AuthorizationRequestResolver(
+                                reactiveClientRegistrationRepository,
+                                commonConfig,
+                                redirectHelper,
+                                oauth2ClientManager))
+                        .authenticationSuccessHandler(authenticationSuccessHandler)
+                        .authenticationFailureHandler(authenticationFailureHandler)
+                        .authorizedClientRepository(new ClientUserRepository(userService, commonConfig)))
+                .logout().logoutUrl(Url.LOGOUT_URL)
+                .logoutSuccessHandler(new LogoutSuccessHandler(objectMapper, analyticsService)).and()
+                .build();
+    }
+
+    @Bean
+    public WebFilter jwtAuthenticationWebFilter() {
+        return new JwtAuthenticationWebFilter(jwtUtils, jwtAuthenticationSuccessHandler(), jwtAuthenticationFailureHandler(), securityContextRepository);
+    }
+
+    @Bean
+    public AuthenticationSuccessHandler jwtAuthenticationSuccessHandler() {
+        return new JwtAuthenticationSuccessHandler();
+    }
+
+    @Bean
+    public AuthenticationFailureHandler jwtAuthenticationFailureHandler() {
+        return new JwtAuthenticationFailureHandler();
+    }
+}
+```
+
+#### JwtAuthenticationWebFilter.java
+
+```java
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.web.server.WebFilterExchange;
+import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
+import org.springframework.security.web.server.authentication.ServerAuthenticationSuccessHandler;
+import org.springframework.security.web.server.context.WebSessionServerSecurityContextRepository;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
+
+public class JwtAuthenticationWebFilter implements WebFilter {
+
+    private final JwtUtils jwtUtils;
+    private final ServerAuthenticationSuccessHandler successHandler;
+    private final ServerAuthenticationFailureHandler failureHandler;
+    private final WebSessionServerSecurityContextRepository securityContextRepository;
+
+    public JwtAuthenticationWebFilter(JwtUtils jwtUtils,
+                                      ServerAuthenticationSuccessHandler successHandler,
+                                      ServerAuthenticationFailureHandler failureHandler,
+                                      WebSessionServerSecurityContextRepository securityContextRepository) {
+        this.jwtUtils = jwtUtils;
+        this.successHandler = successHandler;
+        this.failureHandler = failureHandler;
+        this.securityContextRepository = securityContextRepository;
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        String token = exchange.getRequest().getHeaders().getFirst("Authorization");
+        if (token != null && token.startsWith("Bearer ")) {
+            String jwt = token.substring(7);
+            String username = jwtUtils.extractUsername(jwt);
+            return Mono.justOrEmpty(username)
+                    .flatMap(jwtUtils::loadUserByUsername)
+                    .flatMap(userDetails -> {
+                        if (jwtUtils.validateToken(jwt, userDetails)) {
+                            Authentication authentication = jwtUtils.getAuthentication(jwt, userDetails);
+                            return ReactiveSecurityContextHolder.getContext()
+                                    .flatMap(ctx -> {
+                                        ctx.setAuthentication(authentication);
+                                        return securityContextRepository.save(exchange, ctx)
+                                                .then(successHandler.onAuthenticationSuccess(new WebFilterExchange(exchange, chain), authentication));
+                                    });
+                        } else {
+                            return failureHandler.onAuthenticationFailure(new WebFilterExchange(exchange, chain), new RuntimeException("Invalid token"))
+                                    .then(Mono.defer(() -> {
+                                        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                                        return Mono.empty();
+                                    }));
+                        }
+                    }).switchIfEmpty(Mono.defer(() -> {
+                        return failureHandler.onAuthenticationFailure(new WebFilterExchange(exchange, chain), new RuntimeException("No username found"))
+                                .then(Mono.defer(() -> {
+                                    exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                                    return Mono.empty();
+                                }));
+                    }));
+        }
+        return chain.filter(exchange);
+    }
+}
+```
+
+### 自定义的 JWT 处理器
+
+创建自定义的 `JwtAuthenticationSuccessHandler` 和 `JwtAuthenticationFailureHandler`，并在 `SecurityConfig` 中将它们注入到 `JwtAuthenticationWebFilter` 中。
+
+#### JwtAuthenticationSuccessHandler.java
+
+```java
+import org.springframework.security.core.Authentication;
+import org.springframework.security.web.server.WebFilterExchange;
+import org.springframework.security.web.server.authentication.ServerAuthenticationSuccessHandler;
+import reactor.core.publisher.Mono;
+
+public class JwtAuthenticationSuccessHandler implements ServerAuthenticationSuccessHandler {
+
+    @Override
+    public Mono<Void> onAuthenticationSuccess(WebFilterExchange webFilterExchange, Authentication authentication) {
+        // Your custom success handling logic
+        return webFilterExchange.getExchange().getResponse().setComplete();
+    }
+}
+```
+
+#### JwtAuthenticationFailureHandler.java
+
+```java
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.server.WebFilterExchange;
+import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
+import reactor.core.publisher.Mono;
+
+public class JwtAuthenticationFailureHandler implements ServerAuthenticationFailureHandler {
+
+    @Override
+    public Mono<Void> onAuthenticationFailure(WebFilterExchange webFilterExchange, AuthenticationException exception) {
+        // Your custom failure handling logic
+
+
+        webFilterExchange.getExchange().getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        return webFilterExchange.getExchange().getResponse().setComplete();
+    }
+}
+```
+
+这样，你就可以在 `JwtAuthenticationWebFilter` 中使用新的 `JwtAuthenticationSuccessHandler` 和 `JwtAuthenticationFailureHandler`，而表单登录则保持使用已有的处理逻辑。
