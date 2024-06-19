@@ -1,0 +1,70 @@
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.server.WebFilterExchange;
+import org.springframework.security.web.server.context.WebSessionServerSecurityContextRepository;
+import org.springframework.security.web.server.authentication.ServerAuthenticationSuccessHandler;
+import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+@RestController
+@RequestMapping("/api")
+public class AuthController {
+
+    @Autowired
+    private JwtUtils jwtUtils;
+
+    @Autowired
+    private UserDetailsService userDetailsService;
+
+    @Autowired
+    private WebSessionServerSecurityContextRepository securityContextRepository;
+
+    @Autowired
+    private ServerAuthenticationSuccessHandler authenticationSuccessHandler;
+
+    @Autowired
+    private ServerAuthenticationFailureHandler authenticationFailureHandler;
+
+    @GetMapping("/authenticate")
+    public Mono<Void> authenticate(@RequestHeader("Authorization") String token, ServerWebExchange exchange) {
+        String jwt = token.startsWith("Bearer ") ? token.substring(7) : token;
+        String username = jwtUtils.extractUsername(jwt);
+
+        return Mono.justOrEmpty(username)
+                .flatMap(userDetailsService::loadUserByUsername)
+                .flatMap(userDetails -> {
+                    if (jwtUtils.validateToken(jwt, userDetails)) {
+                        Authentication authentication = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        return ReactiveSecurityContextHolder.getContext()
+                                .flatMap(ctx -> {
+                                    ctx.setAuthentication(authentication);
+                                    return securityContextRepository.save(exchange, ctx)
+                                            .then(authenticationSuccessHandler.onAuthenticationSuccess(new WebFilterExchange(exchange, null), authentication));
+                                });
+                    } else {
+                        return authenticationFailureHandler.onAuthenticationFailure(new WebFilterExchange(exchange, null), new RuntimeException("Invalid token"))
+                                .then(Mono.defer(() -> {
+                                    exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                                    return Mono.empty();
+                                }));
+                    }
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    return authenticationFailureHandler.onAuthenticationFailure(new WebFilterExchange(exchange, null), new RuntimeException("No username found"))
+                            .then(Mono.defer(() -> {
+                                exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                                return Mono.empty();
+                            }));
+                }));
+    }
+}
