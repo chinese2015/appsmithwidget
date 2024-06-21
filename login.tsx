@@ -94,8 +94,8 @@ export function Login(props: LoginFormProps) {
   const isBrandingEnabled = useFeatureFlag(
     FEATURE_FLAG.license_branding_enabled,
   );
-  const tentantConfig = useSelector(getTenantConfig);
-  const { instanceName } = tentantConfig;
+  const tenantConfig = useSelector(getTenantConfig);
+  const { instanceName } = tenantConfig;
   const htmlPageTitle = getHTMLPageTitle(isBrandingEnabled, instanceName);
   const invalidCredsForgotPasswordLinkText = createMessage(
     LOGIN_PAGE_INVALID_CREDS_FORGOT_PASSWORD_LINK,
@@ -165,6 +165,9 @@ export function Login(props: LoginFormProps) {
       .catch(error => {
         console.error('Error:', error);
       });
+
+      // 隐藏 iframe
+      setIframeVisible(false);
     }
   };
 
@@ -177,6 +180,7 @@ export function Login(props: LoginFormProps) {
     };
 
     window.addEventListener('storage', handleStorageChange);
+    checkLocalStorage(); // 初次加载时检查
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
@@ -272,10 +276,28 @@ export function Login(props: LoginFormProps) {
       )}
       <Button onClick={handleButtonClick}>打开iframe</Button>
       {iframeVisible && (
-        <iframe
-          src="https://your-iframe-url.com"
-          style={{ width: '100%', height: '500px', border: 'none' }}
-        ></iframe>
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '80%',
+          height: '80%',
+          backgroundColor: 'white',
+          border: '1px solid #ccc',
+          zIndex: 1000,
+          boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+        }}>
+          <iframe
+            src="https://your-iframe-url.com"
+            style={{ width: '100%', height: '100%', border: 'none' }}
+          ></iframe>
+          <Button onClick={() => setIframeVisible(false)} style={{
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+          }}>关闭</Button>
+        </div>
       )}
     </Container>
   );
