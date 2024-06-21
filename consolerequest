@@ -1,0 +1,24 @@
+// 从 local storage 读取 user 字符串
+const user = localStorage.getItem('user');
+if (!user) {
+  console.error('User not found in local storage');
+} else {
+  // 拼接 "Bearer " 前缀
+  const token = `Bearer ${user}`;
+
+  // 发送 GET 请求
+  fetch('你的接口URL', {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token,
+    },
+  })
+  .then(response => response.json())
+  .then(data => {
+    console.log(data);
+  })
+  .catch(error => {
+    console.error('Error:', error);
+  });
+}
