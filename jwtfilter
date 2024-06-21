@@ -1,0 +1,47 @@
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.security.web.server.context.ServerSecurityContextRepository;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import org.springframework.web.server.WebFilterExchange;
+import reactor.core.publisher.Mono;
+
+public class JwtAuthenticationWebFilter implements WebFilter {
+
+    private final JwtUtils jwtUtils;
+    private final AuthenticationSuccessHandler successHandler;
+    private final AuthenticationFailureHandler failureHandler;
+    private final ServerSecurityContextRepository securityContextRepository;
+
+    public JwtAuthenticationWebFilter(JwtUtils jwtUtils,
+                                      AuthenticationSuccessHandler successHandler,
+                                      AuthenticationFailureHandler failureHandler,
+                                      ServerSecurityContextRepository securityContextRepository) {
+        this.jwtUtils = jwtUtils;
+        this.successHandler = successHandler;
+        this.failureHandler = failureHandler;
+        this.securityContextRepository = securityContextRepository;
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        return jwtUtils.extractToken(exchange.getRequest())
+                .flatMap(token -> jwtUtils.validateAndParseToken(token)
+                        .flatMap(userDetails -> {
+                            Authentication authentication =
+                                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                            SecurityContext context = new SecurityContextImpl(authentication);
+                            return securityContextRepository.save(exchange, context)
+                                    .then(ReactiveSecurityContextHolder.withSecurityContext(Mono.just(context)))
+                                    .then(successHandler.onAuthenticationSuccess(new WebFilterExchange(exchange, chain), authentication))
+                                    .then(chain.filter(exchange));
+                        }))
+                .onErrorResume(e -> failureHandler.onAuthenticationFailure(new WebFilterExchange(exchange, chain), e)
+                        .then(chain.filter(exchange)));
+    }
+}
