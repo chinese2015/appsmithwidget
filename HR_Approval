@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="Definitions_1"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+             
+  <!-- Process Definition -->
+  <process id="leave_approval_process" name="Leave Approval Process" isExecutable="true">
+
+    <!-- Start Event -->
+    <startEvent id="startEvent" name="Submit Leave Request">
+      <outgoing>flow1</outgoing>
+    </startEvent>
+
+    <!-- User Task: Employee Submits Request -->
+    <userTask id="submitLeaveRequest" name="Submit Leave Request" camunda:assignee="employee">
+      <incoming>flow1</incoming>
+      <outgoing>flow2</outgoing>
+    </userTask>
+
+    <!-- Flow -->
+    <sequenceFlow id="flow1" sourceRef="startEvent" targetRef="submitLeaveRequest" />
+    <sequenceFlow id="flow2" sourceRef="submitLeaveRequest" targetRef="managerApprovalTask" />
+
+    <!-- User Task: Manager Approval -->
+    <userTask id="managerApprovalTask" name="Manager Approval" camunda:candidateGroups="managers">
+      <incoming>flow2</incoming>
+      <outgoing>flow3</outgoing>
+    </userTask>
+
+    <sequenceFlow id="flow3" sourceRef="managerApprovalTask" targetRef="approvedDecision" />
+
+    <!-- Exclusive Gateway: Check Approval Decision -->
+    <exclusiveGateway id="approvedDecision" name="Approved?">
+      <incoming>flow3</incoming>
+      <outgoing>flow4</outgoing>
+      <outgoing>flow5</outgoing>
+    </exclusiveGateway>
+
+    <!-- Flow based on decision -->
+    <sequenceFlow id="flow4" sourceRef="approvedDecision" targetRef="hrApprovalTask">
+      <conditionExpression xsi:type="tFormalExpression">${approved == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow5" sourceRef="approvedDecision" targetRef="rejectNotification">
+      <conditionExpression xsi:type="tFormalExpression">${approved == false}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- User Task: HR Approval -->
+    <userTask id="hrApprovalTask" name="HR Approval" camunda:candidateGroups="hr">
+      <incoming>flow4</incoming>
+      <outgoing>flow6</outgoing>
+    </userTask>
+
+    <sequenceFlow id="flow6" sourceRef="hrApprovalTask" targetRef="endEventApproved" />
+
+    <!-- Service Task: Reject Notification -->
+    <serviceTask id="rejectNotification" name="Send Rejection Notification" camunda:class="com.example.SendRejectionNotification">
+      <incoming>flow5</incoming>
+      <outgoing>flow7</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="flow7" sourceRef="rejectNotification" targetRef="endEventRejected" />
+
+    <!-- End Events -->
+    <endEvent id="endEventApproved" name="Request Approved">
+      <incoming>flow6</incoming>
+    </endEvent>
+    
+    <endEvent id="endEventRejected" name="Request Rejected">
+      <incoming>flow7</incoming>
+    </endEvent>
+
+  </process>
+
+  <!-- BPMN Diagram -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="leave_approval_process">
+      <!-- Diagram elements here -->
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>
