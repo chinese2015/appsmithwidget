@@ -1,0 +1,27 @@
+// 查询 user 表中的所有 email
+const users = db.user.find({}, { email: 1 }).toArray(); // 查询并转换为数组
+
+// 遍历每个 user
+users.forEach(user => {
+  const email = user.email;
+
+  // 只处理 email 包含 @statestreet.com 的记录
+  if (email.includes("@statestreet.com")) {
+    // 检查 userPermissionData 表中是否有该 email 的 userId
+    const existingPermission = db.userPermissionData.findOne({ userId: email });
+
+    if (existingPermission) {
+      // 如果存在，向 groups 数组中添加 OOA_Tool，确保无重复
+      db.userPermissionData.updateOne(
+        { userId: email },
+        { $addToSet: { groups: "OOA_Tool" } }
+      );
+    } else {
+      // 如果不存在，插入新记录
+      db.userPermissionData.insertOne({
+        userId: email,
+        groups: ["OOA_Tool"]
+      });
+    }
+  }
+});
