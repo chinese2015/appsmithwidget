@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions 
-    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-    xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
-    xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://www.omg.org/spec/BPMN/20100524/MODEL 
-                        http://www.omg.org/spec/BPMN/20100524/MODEL/BPMN20.xsd"
-    id="Definitions_ParallelTasks"
-    targetNamespace="http://camunda.org/schema/1.0/bpmn">
-  
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+  xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" 
+  xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  xsi:schemaLocation="http://www.omg.org/spec/BPMN/20100524/MODEL 
+                      http://www.omg.org/spec/BPMN/20100524/MODEL/BPMN20.xsd"
+  id="Definitions_ParallelTasks"
+  targetNamespace="http://camunda.org/schema/1.0/bpmn">
+
   <!-- 定义将要抛出的两个消息，用于中间消息事件 -->
   <bpmn:message id="Message_start_notification" name="send_start_notification" />
   <bpmn:message id="Message_ready_notification" name="send_ready_notification" />
@@ -26,7 +26,7 @@
     <bpmn:serviceTask id="ServiceTask_prepare_data" name="prepare_data">
       <bpmn:incoming>Flow_Start_to_Service</bpmn:incoming>
       <bpmn:outgoing>Flow_Service_to_NotifyStart</bpmn:outgoing>
-      <!-- 这里可加上 Camunda 的具体实现配置，如 delegateExpression / class / expression 等 -->
+      <!-- 若需执行逻辑，可添加 camunda:class / delegateExpression 等扩展属性 -->
     </bpmn:serviceTask>
 
     <!-- 中间消息抛出事件：send_start_notification -->
@@ -133,10 +133,152 @@
 
   </bpmn:process>
 
-  <!-- 下面是最简 BPMN-DI 定义，可以在 Camunda Modeler 中可视化该流程后进行布局修改。 -->
+  <!-- ************************ BPMN-DI（图形布局信息） ************************ -->
   <bpmndi:BPMNDiagram id="BPMNDiagram_ParallelTasks">
     <bpmndi:BPMNPlane id="BPMNPlane_ParallelTasks" bpmnElement="Process_ParallelTasks">
-      <!-- 在此可添加 bpmndi:BPMNShape 与 bpmndi:BPMNEdge 元素，为了简洁省略。 -->
+
+      <!-- StartEvent_1 -->
+      <bpmndi:BPMNShape id="Shape_StartEvent_1" bpmnElement="StartEvent_1">
+        <omgdc:Bounds x="100" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- ServiceTask_prepare_data -->
+      <bpmndi:BPMNShape id="Shape_ServiceTask_prepare_data" bpmnElement="ServiceTask_prepare_data">
+        <omgdc:Bounds x="200" y="92" width="80" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- IntermediateThrowEvent_start_notification -->
+      <bpmndi:BPMNShape id="Shape_IntermediateThrowEvent_start_notification" bpmnElement="IntermediateThrowEvent_start_notification">
+        <omgdc:Bounds x="350" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- Gateway_parallel_split -->
+      <bpmndi:BPMNShape id="Shape_Gateway_parallel_split" bpmnElement="Gateway_parallel_split" isMarkerVisible="true">
+        <omgdc:Bounds x="500" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- UserTask_1 -->
+      <bpmndi:BPMNShape id="Shape_UserTask_1" bpmnElement="UserTask_1">
+        <omgdc:Bounds x="650" y="20" width="100" height="60" />
+      </bpmndi:BPMNShape>
+
+      <!-- UserTask_2 -->
+      <bpmndi:BPMNShape id="Shape_UserTask_2" bpmnElement="UserTask_2">
+        <omgdc:Bounds x="650" y="100" width="100" height="60" />
+      </bpmndi:BPMNShape>
+
+      <!-- UserTask_3 -->
+      <bpmndi:BPMNShape id="Shape_UserTask_3" bpmnElement="UserTask_3">
+        <omgdc:Bounds x="650" y="180" width="100" height="60" />
+      </bpmndi:BPMNShape>
+
+      <!-- UserTask_4 -->
+      <bpmndi:BPMNShape id="Shape_UserTask_4" bpmnElement="UserTask_4">
+        <omgdc:Bounds x="650" y="260" width="100" height="60" />
+      </bpmndi:BPMNShape>
+
+      <!-- Gateway_parallel_join -->
+      <bpmndi:BPMNShape id="Shape_Gateway_parallel_join" bpmnElement="Gateway_parallel_join" isMarkerVisible="true">
+        <omgdc:Bounds x="850" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- IntermediateThrowEvent_ready_notification -->
+      <bpmndi:BPMNShape id="Shape_IntermediateThrowEvent_ready_notification" bpmnElement="IntermediateThrowEvent_ready_notification">
+        <omgdc:Bounds x="1000" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- EndEvent_1 -->
+      <bpmndi:BPMNShape id="Shape_EndEvent_1" bpmnElement="EndEvent_1">
+        <omgdc:Bounds x="1150" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- 连线 - Flow_Start_to_Service -->
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_to_Service" bpmnElement="Flow_Start_to_Service">
+        <omgdi:waypoint x="136" y="118" />
+        <omgdi:waypoint x="200" y="118" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 连线 - Flow_Service_to_NotifyStart -->
+      <bpmndi:BPMNEdge id="Edge_Flow_Service_to_NotifyStart" bpmnElement="Flow_Service_to_NotifyStart">
+        <omgdi:waypoint x="280" y="118" />
+        <omgdi:waypoint x="350" y="118" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 连线 - Flow_NotifyStart_to_GatewaySplit -->
+      <bpmndi:BPMNEdge id="Edge_Flow_NotifyStart_to_GatewaySplit" bpmnElement="Flow_NotifyStart_to_GatewaySplit">
+        <omgdi:waypoint x="386" y="118" />
+        <omgdi:waypoint x="500" y="120" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 并行分支 - Flow_GatewaySplit_to_UserTask1 -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GatewaySplit_to_UserTask1" bpmnElement="Flow_GatewaySplit_to_UserTask1">
+        <omgdi:waypoint x="525" y="120" />
+        <omgdi:waypoint x="525" y="50" />
+        <omgdi:waypoint x="650" y="50" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 并行分支 - Flow_GatewaySplit_to_UserTask2 -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GatewaySplit_to_UserTask2" bpmnElement="Flow_GatewaySplit_to_UserTask2">
+        <omgdi:waypoint x="550" y="120" />
+        <omgdi:waypoint x="650" y="130" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 并行分支 - Flow_GatewaySplit_to_UserTask3 -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GatewaySplit_to_UserTask3" bpmnElement="Flow_GatewaySplit_to_UserTask3">
+        <omgdi:waypoint x="525" y="120" />
+        <omgdi:waypoint x="525" y="210" />
+        <omgdi:waypoint x="650" y="210" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 并行分支 - Flow_GatewaySplit_to_UserTask4 -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GatewaySplit_to_UserTask4" bpmnElement="Flow_GatewaySplit_to_UserTask4">
+        <omgdi:waypoint x="550" y="120" />
+        <omgdi:waypoint x="550" y="290" />
+        <omgdi:waypoint x="650" y="290" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 回到并行汇聚 - Flow_UserTask1_to_GatewayJoin -->
+      <bpmndi:BPMNEdge id="Edge_Flow_UserTask1_to_GatewayJoin" bpmnElement="Flow_UserTask1_to_GatewayJoin">
+        <omgdi:waypoint x="750" y="50" />
+        <omgdi:waypoint x="775" y="50" />
+        <omgdi:waypoint x="775" y="120" />
+        <omgdi:waypoint x="850" y="120" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 回到并行汇聚 - Flow_UserTask2_to_GatewayJoin -->
+      <bpmndi:BPMNEdge id="Edge_Flow_UserTask2_to_GatewayJoin" bpmnElement="Flow_UserTask2_to_GatewayJoin">
+        <omgdi:waypoint x="750" y="130" />
+        <omgdi:waypoint x="850" y="130" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 回到并行汇聚 - Flow_UserTask3_to_GatewayJoin -->
+      <bpmndi:BPMNEdge id="Edge_Flow_UserTask3_to_GatewayJoin" bpmnElement="Flow_UserTask3_to_GatewayJoin">
+        <omgdi:waypoint x="750" y="210" />
+        <omgdi:waypoint x="775" y="210" />
+        <omgdi:waypoint x="775" y="145" />
+        <omgdi:waypoint x="850" y="145" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 回到并行汇聚 - Flow_UserTask4_to_GatewayJoin -->
+      <bpmndi:BPMNEdge id="Edge_Flow_UserTask4_to_GatewayJoin" bpmnElement="Flow_UserTask4_to_GatewayJoin">
+        <omgdi:waypoint x="750" y="290" />
+        <omgdi:waypoint x="775" y="290" />
+        <omgdi:waypoint x="775" y="160" />
+        <omgdi:waypoint x="850" y="160" />
+      </bpmndi:BPMNEdge>
+
+      <!-- 并行网关（Join）到 send_ready_notification -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GatewayJoin_to_NotifyReady" bpmnElement="Flow_GatewayJoin_to_NotifyReady">
+        <omgdi:waypoint x="900" y="120" />
+        <omgdi:waypoint x="1000" y="118" />
+      </bpmndi:BPMNEdge>
+
+      <!-- send_ready_notification 到 End -->
+      <bpmndi:BPMNEdge id="Edge_Flow_NotifyReady_to_End" bpmnElement="Flow_NotifyReady_to_End">
+        <omgdi:waypoint x="1036" y="118" />
+        <omgdi:waypoint x="1150" y="118" />
+      </bpmndi:BPMNEdge>
+
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 
