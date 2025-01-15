@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions 
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+    xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.omg.org/spec/BPMN/20100524/MODEL 
+                        http://www.omg.org/spec/BPMN/20100524/MODEL/BPMN20.xsd"
+    id="Definitions_ParallelTasks"
+    targetNamespace="http://camunda.org/schema/1.0/bpmn">
+  
+  <!-- 定义将要抛出的两个消息，用于中间消息事件 -->
+  <bpmn:message id="Message_start_notification" name="send_start_notification" />
+  <bpmn:message id="Message_ready_notification" name="send_ready_notification" />
+
+  <!-- 流程本体 -->
+  <bpmn:process id="Process_ParallelTasks" name="ParallelTasksProcess" isExecutable="true">
+
+    <!-- 开始事件 -->
+    <bpmn:startEvent id="StartEvent_1" name="Start">
+      <bpmn:outgoing>Flow_Start_to_Service</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- Service Task: prepare_data -->
+    <bpmn:serviceTask id="ServiceTask_prepare_data" name="prepare_data">
+      <bpmn:incoming>Flow_Start_to_Service</bpmn:incoming>
+      <bpmn:outgoing>Flow_Service_to_NotifyStart</bpmn:outgoing>
+      <!-- 这里可加上 Camunda 的具体实现配置，如 delegateExpression / class / expression 等 -->
+    </bpmn:serviceTask>
+
+    <!-- 中间消息抛出事件：send_start_notification -->
+    <bpmn:intermediateThrowEvent id="IntermediateThrowEvent_start_notification" name="send_start_notification">
+      <bpmn:incoming>Flow_Service_to_NotifyStart</bpmn:incoming>
+      <bpmn:outgoing>Flow_NotifyStart_to_GatewaySplit</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Message_start_notification" />
+    </bpmn:intermediateThrowEvent>
+
+    <!-- 并行网关 (Split) -->
+    <bpmn:parallelGateway id="Gateway_parallel_split" name="Parallel Split">
+      <bpmn:incoming>Flow_NotifyStart_to_GatewaySplit</bpmn:incoming>
+      <bpmn:outgoing>Flow_GatewaySplit_to_UserTask1</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GatewaySplit_to_UserTask2</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GatewaySplit_to_UserTask3</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GatewaySplit_to_UserTask4</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- User Task 1 -->
+    <bpmn:userTask id="UserTask_1" name="User Task 1">
+      <bpmn:incoming>Flow_GatewaySplit_to_UserTask1</bpmn:incoming>
+      <bpmn:outgoing>Flow_UserTask1_to_GatewayJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- User Task 2 -->
+    <bpmn:userTask id="UserTask_2" name="User Task 2">
+      <bpmn:incoming>Flow_GatewaySplit_to_UserTask2</bpmn:incoming>
+      <bpmn:outgoing>Flow_UserTask2_to_GatewayJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- User Task 3 -->
+    <bpmn:userTask id="UserTask_3" name="User Task 3">
+      <bpmn:incoming>Flow_GatewaySplit_to_UserTask3</bpmn:incoming>
+      <bpmn:outgoing>Flow_UserTask3_to_GatewayJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- User Task 4 -->
+    <bpmn:userTask id="UserTask_4" name="User Task 4">
+      <bpmn:incoming>Flow_GatewaySplit_to_UserTask4</bpmn:incoming>
+      <bpmn:outgoing>Flow_UserTask4_to_GatewayJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 并行网关 (Join) -->
+    <bpmn:parallelGateway id="Gateway_parallel_join" name="Parallel Join">
+      <bpmn:incoming>Flow_UserTask1_to_GatewayJoin</bpmn:incoming>
+      <bpmn:incoming>Flow_UserTask2_to_GatewayJoin</bpmn:incoming>
+      <bpmn:incoming>Flow_UserTask3_to_GatewayJoin</bpmn:incoming>
+      <bpmn:incoming>Flow_UserTask4_to_GatewayJoin</bpmn:incoming>
+      <bpmn:outgoing>Flow_GatewayJoin_to_NotifyReady</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- 中间消息抛出事件：send_ready_notification -->
+    <bpmn:intermediateThrowEvent id="IntermediateThrowEvent_ready_notification" name="send_ready_notification">
+      <bpmn:incoming>Flow_GatewayJoin_to_NotifyReady</bpmn:incoming>
+      <bpmn:outgoing>Flow_NotifyReady_to_End</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Message_ready_notification" />
+    </bpmn:intermediateThrowEvent>
+
+    <!-- 结束事件 -->
+    <bpmn:endEvent id="EndEvent_1" name="End">
+      <bpmn:incoming>Flow_NotifyReady_to_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- 顺序流定义 -->
+    <bpmn:sequenceFlow id="Flow_Start_to_Service" 
+                       sourceRef="StartEvent_1" 
+                       targetRef="ServiceTask_prepare_data" />
+    <bpmn:sequenceFlow id="Flow_Service_to_NotifyStart" 
+                       sourceRef="ServiceTask_prepare_data" 
+                       targetRef="IntermediateThrowEvent_start_notification" />
+    <bpmn:sequenceFlow id="Flow_NotifyStart_to_GatewaySplit" 
+                       sourceRef="IntermediateThrowEvent_start_notification" 
+                       targetRef="Gateway_parallel_split" />
+    <bpmn:sequenceFlow id="Flow_GatewaySplit_to_UserTask1" 
+                       sourceRef="Gateway_parallel_split" 
+                       targetRef="UserTask_1" />
+    <bpmn:sequenceFlow id="Flow_GatewaySplit_to_UserTask2" 
+                       sourceRef="Gateway_parallel_split" 
+                       targetRef="UserTask_2" />
+    <bpmn:sequenceFlow id="Flow_GatewaySplit_to_UserTask3" 
+                       sourceRef="Gateway_parallel_split" 
+                       targetRef="UserTask_3" />
+    <bpmn:sequenceFlow id="Flow_GatewaySplit_to_UserTask4" 
+                       sourceRef="Gateway_parallel_split" 
+                       targetRef="UserTask_4" />
+    <bpmn:sequenceFlow id="Flow_UserTask1_to_GatewayJoin" 
+                       sourceRef="UserTask_1" 
+                       targetRef="Gateway_parallel_join" />
+    <bpmn:sequenceFlow id="Flow_UserTask2_to_GatewayJoin" 
+                       sourceRef="UserTask_2" 
+                       targetRef="Gateway_parallel_join" />
+    <bpmn:sequenceFlow id="Flow_UserTask3_to_GatewayJoin" 
+                       sourceRef="UserTask_3" 
+                       targetRef="Gateway_parallel_join" />
+    <bpmn:sequenceFlow id="Flow_UserTask4_to_GatewayJoin" 
+                       sourceRef="UserTask_4" 
+                       targetRef="Gateway_parallel_join" />
+    <bpmn:sequenceFlow id="Flow_GatewayJoin_to_NotifyReady" 
+                       sourceRef="Gateway_parallel_join" 
+                       targetRef="IntermediateThrowEvent_ready_notification" />
+    <bpmn:sequenceFlow id="Flow_NotifyReady_to_End" 
+                       sourceRef="IntermediateThrowEvent_ready_notification" 
+                       targetRef="EndEvent_1" />
+
+  </bpmn:process>
+
+  <!-- 下面是最简 BPMN-DI 定义，可以在 Camunda Modeler 中可视化该流程后进行布局修改。 -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ParallelTasks">
+    <bpmndi:BPMNPlane id="BPMNPlane_ParallelTasks" bpmnElement="Process_ParallelTasks">
+      <!-- 在此可添加 bpmndi:BPMNShape 与 bpmndi:BPMNEdge 元素，为了简洁省略。 -->
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
