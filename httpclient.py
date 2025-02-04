@@ -1,7 +1,9 @@
 # src/agent/http_client.py
 import httpx
+import asyncio
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, AsyncGenerator
+from queue import Queue
 from logger import logger
 
 class HTTPClient:
@@ -12,6 +14,7 @@ class HTTPClient:
         token_url: str,
         max_retries: int = 3,
         timeout: int = 10,
+        max_queue_size: int = 100,
     ):
         """
         初始化 HTTPClient。
@@ -20,17 +23,22 @@ class HTTPClient:
         :param token_url: 获取 access_token 的 URL。
         :param max_retries: 最大重试次数。
         :param timeout: 请求超时时间（秒）。
+        :param max_queue_size: 请求队列的最大大小。
         """
         self.api_key = api_key
         self.base_url = base_url
         self.token_url = token_url
         self.max_retries = max_retries
         self.timeout = timeout
+        self.max_queue_size = max_queue_size
         self.access_token = None
         self.token_expires_at = 0  # token 过期时间戳
-        self.client = httpx.Client(base_url=base_url, timeout=timeout)
+        self.request_queue = Queue(maxsize=max_queue_size)  # 请求队列
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+        self.loop = asyncio.get_event_loop()
+        self.loop.create_task(self._process_queue())  # 启动队列处理任务
 
-    def _get_access_token(self) -> str:
+    async def _get_access_token(self) -> str:
         """
         获取 access_token。如果当前 token 未过期，则直接返回；否则刷新 token。
         """
@@ -41,8 +49,8 @@ class HTTPClient:
         retries = 0
         while retries < self.max_retries:
             try:
-                response = self.client.post(
-                    self.token_url,
+                response = await self.client.post(
+                    self.token_url,  # 这里使用完整的 URL
                     json={"api_key": self.api_key},
                     headers={"Content-Type": "application/json"}
                 )
@@ -56,36 +64,37 @@ class HTTPClient:
                 logger.error(f"Failed to refresh access token (HTTP error): {e}")
                 retries += 1
                 if retries < self.max_retries:
-                    time.sleep(1)  # 等待 1 秒后重试
+                    await asyncio.sleep(1)  # 等待 1 秒后重试
             except Exception as e:
                 logger.error(f"Failed to refresh access token (unexpected error): {e}")
                 retries += 1
                 if retries < self.max_retries:
-                    time.sleep(1)  # 等待 1 秒后重试
+                    await asyncio.sleep(1)  # 等待 1 秒后重试
 
         raise RuntimeError("Failed to refresh access token after maximum retries.")
 
-    def _get_headers(self) -> Dict[str, str]:
+    async def _get_headers(self) -> Dict[str, str]:
         """
         获取请求头，包括动态刷新的 access_token。
         """
-        access_token = self._get_access_token()
+        access_token = await self._get_access_token()
         return {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
 
-    def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
+    async def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """
         发送 HTTP 请求，支持重试机制。
         """
         retries = 0
         while retries < self.max_retries:
             try:
-                response = self.client.request(
+                headers = await self._get_headers()
+                response = await self.client.request(
                     method,
-                    endpoint,
-                    headers=self._get_headers(),
+                    endpoint,  # 这里只需要传递路径部分
+                    headers=headers,
                     **kwargs
                 )
                 response.raise_for_status()
@@ -94,21 +103,46 @@ class HTTPClient:
                 logger.error(f"HTTP request failed (HTTP error): {e}")
                 retries += 1
                 if retries < self.max_retries:
-                    time.sleep(1)  # 等待 1 秒后重试
+                    await asyncio.sleep(1)  # 等待 1 秒后重试
             except httpx.TimeoutError as e:
                 logger.error(f"HTTP request timed out: {e}")
                 retries += 1
                 if retries < self.max_retries:
-                    time.sleep(1)  # 等待 1 秒后重试
+                    await asyncio.sleep(1)  # 等待 1 秒后重试
             except Exception as e:
                 logger.error(f"HTTP request failed (unexpected error): {e}")
                 retries += 1
                 if retries < self.max_retries:
-                    time.sleep(1)  # 等待 1 秒后重试
+                    await asyncio.sleep(1)  # 等待 1 秒后重试
 
         raise RuntimeError("HTTP request failed after maximum retries.")
 
-    def chat_completions_create(
+    async def _process_queue(self):
+        """
+        处理请求队列中的任务。
+        """
+        while True:
+            if not self.request_queue.empty():
+                method, endpoint, future, kwargs = self.request_queue.get()
+                try:
+                    result = await self._make_request(method, endpoint, **kwargs)
+                    future.set_result(result)
+                except Exception as e:
+                    future.set_exception(e)
+                finally:
+                    self.request_queue.task_done()
+            else:
+                await asyncio.sleep(0.1)  # 队列为空时，短暂休眠
+
+    async def enqueue_request(self, method: str, endpoint: str, **kwargs) -> Dict:
+        """
+        将请求加入队列，并返回 Future 对象。
+        """
+        future = self.loop.create_future()
+        await self.request_queue.put((method, endpoint, future, kwargs))
+        return await future
+
+    async def chat_completions_create(
         self,
         model: str,
         messages: List[Dict[str, str]],
@@ -125,14 +159,14 @@ class HTTPClient:
             **kwargs
         }
 
-        return self._make_request(
+        return await self.enqueue_request(
             method="POST",
-            endpoint="/v1/chat/completions",
+            endpoint="/v1/chat/completions",  # 这里只需要传递路径部分
             json=data
         )
 
-    def close(self):
+    async def close(self):
         """
         关闭 HTTP 客户端。
         """
-        self.client.close()
+        await self.client.aclose()
