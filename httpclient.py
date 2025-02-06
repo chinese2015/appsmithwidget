@@ -3,7 +3,7 @@ import httpx
 import asyncio
 import time
 from typing import Dict, List, Optional, AsyncGenerator
-from queue import Queue
+from asyncio import Queue as AsyncQueue
 from logger import logger
 
 class HTTPClient:
@@ -33,10 +33,14 @@ class HTTPClient:
         self.max_queue_size = max_queue_size
         self.access_token = None
         self.token_expires_at = 0  # token 过期时间戳
-        self.request_queue = Queue(maxsize=max_queue_size)  # 请求队列
+        self.request_queue = AsyncQueue(maxsize=max_queue_size)  # 使用异步队列
         self.client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
-        self.loop = asyncio.get_event_loop()
-        self.loop.create_task(self._process_queue())  # 启动队列处理任务
+        self._queue_processor_task = None  # 用于存储队列处理任务的引用
+
+    async def start(self):
+        """启动队列处理器"""
+        if self._queue_processor_task is None:
+            self._queue_processor_task = asyncio.create_task(self._process_queue())
 
     async def _get_access_token(self) -> str:
         """
@@ -118,12 +122,10 @@ class HTTPClient:
         raise RuntimeError("HTTP request failed after maximum retries.")
 
     async def _process_queue(self):
-        """
-        处理请求队列中的任务。
-        """
+        """处理请求队列中的任务"""
         while True:
-            if not self.request_queue.empty():
-                method, endpoint, future, kwargs = self.request_queue.get()
+            try:
+                method, endpoint, future, kwargs = await self.request_queue.get()
                 try:
                     result = await self._make_request(method, endpoint, **kwargs)
                     future.set_result(result)
@@ -131,14 +133,15 @@ class HTTPClient:
                     future.set_exception(e)
                 finally:
                     self.request_queue.task_done()
-            else:
-                await asyncio.sleep(0.1)  # 队列为空时，短暂休眠
+            except asyncio.CancelledError:
+                break
 
     async def enqueue_request(self, method: str, endpoint: str, **kwargs) -> Dict:
-        """
-        将请求加入队列，并返回 Future 对象。
-        """
-        future = self.loop.create_future()
+        """将请求加入队列，并返回 Future 对象"""
+        if self._queue_processor_task is None:
+            await self.start()
+        
+        future = asyncio.get_event_loop().create_future()
         await self.request_queue.put((method, endpoint, future, kwargs))
         return await future
 
@@ -166,7 +169,17 @@ class HTTPClient:
         )
 
     async def close(self):
-        """
-        关闭 HTTP 客户端。
-        """
+        """关闭 HTTP 客户端"""
+        if self._queue_processor_task:
+            self._queue_processor_task.cancel()
+            await asyncio.gather(self._queue_processor_task, return_exceptions=True)
+            self._queue_processor_task = None
         await self.client.aclose()
+
+    async def __aenter__(self):
+        """支持异步上下文管理器"""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
