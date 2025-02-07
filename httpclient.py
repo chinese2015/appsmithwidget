@@ -7,6 +7,10 @@ from asyncio import Queue as AsyncQueue
 from logger import logger
 
 class HTTPClient:
+    TOKEN_REFRESH_THRESHOLD = 300  # 提前5分钟刷新token
+    MAX_CONCURRENT_REQUESTS = 20   # 最大并发请求数
+    BASE_RETRY_DELAY = 1.0        # 基础重试延迟时间（秒）
+
     def __init__(
         self,
         api_key: str,
@@ -36,6 +40,9 @@ class HTTPClient:
         self.request_queue = AsyncQueue(maxsize=max_queue_size)  # 使用异步队列
         self.client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
         self._queue_processor_task = None  # 用于存储队列处理任务的引用
+        self._semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
+        self._last_request_time = 0
+        self.min_request_interval = 0.1  # 最小请求间隔（秒）
 
     async def start(self):
         """启动队列处理器"""
@@ -43,37 +50,33 @@ class HTTPClient:
             self._queue_processor_task = asyncio.create_task(self._process_queue())
 
     async def _get_access_token(self) -> str:
-        """
-        获取 access_token。如果当前 token 未过期，则直接返回；否则刷新 token。
-        """
-        if self.access_token and time.time() < self.token_expires_at:
+        """获取access_token，增加提前刷新机制"""
+        current_time = time.time()
+        if (self.access_token and 
+            current_time < self.token_expires_at - self.TOKEN_REFRESH_THRESHOLD):
             return self.access_token
 
-        # 调用 API 获取新的 access_token
         retries = 0
         while retries < self.max_retries:
             try:
                 response = await self.client.post(
-                    self.token_url,  # 这里使用完整的 URL
+                    self.token_url,
                     json={"api_key": self.api_key},
                     headers={"Content-Type": "application/json"}
                 )
                 response.raise_for_status()
                 token_data = response.json()
                 self.access_token = token_data["access_token"]
-                self.token_expires_at = time.time() + token_data["expires_in"]  # 设置过期时间
+                self.token_expires_at = time.time() + token_data["expires_in"]
                 logger.debug("Successfully refreshed access token.")
                 return self.access_token
-            except httpx.HTTPStatusError as e:
-                logger.error(f"Failed to refresh access token (HTTP error): {e}")
-                retries += 1
-                if retries < self.max_retries:
-                    await asyncio.sleep(1)  # 等待 1 秒后重试
             except Exception as e:
-                logger.error(f"Failed to refresh access token (unexpected error): {e}")
                 retries += 1
                 if retries < self.max_retries:
-                    await asyncio.sleep(1)  # 等待 1 秒后重试
+                    # 使用指数退避策略
+                    delay = self.BASE_RETRY_DELAY * (2 ** (retries - 1))
+                    await asyncio.sleep(delay)
+                logger.error(f"Failed to refresh token (attempt {retries}): {e}")
 
         raise RuntimeError("Failed to refresh access token after maximum retries.")
 
@@ -88,38 +91,36 @@ class HTTPClient:
         }
 
     async def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
-        """
-        发送 HTTP 请求，支持重试机制。
-        """
-        retries = 0
-        while retries < self.max_retries:
-            try:
-                headers = await self._get_headers()
-                response = await self.client.request(
-                    method,
-                    endpoint,  # 这里只需要传递路径部分
-                    headers=headers,
-                    **kwargs
-                )
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP request failed (HTTP error): {e}")
-                retries += 1
-                if retries < self.max_retries:
-                    await asyncio.sleep(1)  # 等待 1 秒后重试
-            except httpx.TimeoutError as e:
-                logger.error(f"HTTP request timed out: {e}")
-                retries += 1
-                if retries < self.max_retries:
-                    await asyncio.sleep(1)  # 等待 1 秒后重试
-            except Exception as e:
-                logger.error(f"HTTP request failed (unexpected error): {e}")
-                retries += 1
-                if retries < self.max_retries:
-                    await asyncio.sleep(1)  # 等待 1 秒后重试
+        """发送HTTP请求，增加限流机制"""
+        async with self._semaphore:  # 限制并发请求数
+            # 确保请求间隔
+            current_time = time.time()
+            time_since_last_request = current_time - self._last_request_time
+            if time_since_last_request < self.min_request_interval:
+                await asyncio.sleep(self.min_request_interval - time_since_last_request)
 
-        raise RuntimeError("HTTP request failed after maximum retries.")
+            retries = 0
+            while retries < self.max_retries:
+                try:
+                    headers = await self._get_headers()
+                    response = await self.client.request(
+                        method,
+                        endpoint,
+                        headers=headers,
+                        **kwargs
+                    )
+                    response.raise_for_status()
+                    self._last_request_time = time.time()
+                    return response.json()
+                except Exception as e:
+                    retries += 1
+                    if retries < self.max_retries:
+                        # 使用指数退避策略
+                        delay = self.BASE_RETRY_DELAY * (2 ** (retries - 1))
+                        await asyncio.sleep(delay)
+                    logger.error(f"Request failed (attempt {retries}): {e}")
+
+            raise RuntimeError("HTTP request failed after maximum retries.")
 
     async def _process_queue(self):
         """处理请求队列中的任务"""
@@ -175,11 +176,3 @@ class HTTPClient:
             await asyncio.gather(self._queue_processor_task, return_exceptions=True)
             self._queue_processor_task = None
         await self.client.aclose()
-
-    async def __aenter__(self):
-        """支持异步上下文管理器"""
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
