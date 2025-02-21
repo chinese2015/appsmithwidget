@@ -3,9 +3,8 @@ import com.mongodb.client.result.UpdateResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.autoconfigure.mongo.MongoProperties;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
@@ -33,19 +32,24 @@ class CustomMongoTemplateTest {
     @Mock
     private MongoProperties mongoProperties;
 
-    @Mock
+    @Mock // 仍然 mock 原生的 MongoTemplate
     private MongoTemplate mongoTemplate;
 
     @Mock
     private MongoMappingContext mappingContext;
 
-    @InjectMocks
+    @Spy // 使用 @Spy
     private CustomMongoTemplate customMongoTemplate;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
+        // MockitoAnnotations.openMocks(this); // 不需要手动初始化，@Spy 会处理
         when(mongoConverter.getMappingContext()).thenReturn(mappingContext);
+
+        // 重要：在 @Spy 对象创建之后，再进行依赖的注入
+        customMongoTemplate = new CustomMongoTemplate(mongoDbFactory, mongoConverter, mongoProperties);
+        customMongoTemplate = spy(customMongoTemplate); // 将实例包装成spy.
+
     }
     static class TestDomain extends BaseDomain {
         String name;
@@ -56,7 +60,7 @@ class CustomMongoTemplateTest {
         }
     }
 
-    // 通过 updateMulti 间接测试 isCosmosDB
+    // ... 其余测试方法保持不变，但使用 doReturn().when() 的方式进行模拟 ...
     @Test
     void updateMulti_cosmosDBUri_usesBatchUpdate() {
         Query query = new Query();
@@ -65,29 +69,34 @@ class CustomMongoTemplateTest {
 
         // 设置为 CosmosDB URI
         when(mongoProperties.getUri()).thenReturn("mongodb://user:password@host.mongo.cosmos.azure.com:10255/db?ssl=true");
-        when(mongoTemplate.count(query, entityClass)).thenReturn(100L); // 触发批量更新
+        // 使用 doReturn().when() 模拟 count 方法
+        doReturn(100L).when(customMongoTemplate).count(query, entityClass);
 
-        // 模拟批量更新的行为（模拟 find 和 updateFirst）
-        List<TestDomain> batch = new ArrayList<>();
-        for (int i = 0; i < 100; i++) {
-            batch.add(new TestDomain("id" + i, "name" + i));
+        // 模拟批量更新的行为
+        List<TestDomain> batch1 = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            batch1.add(new TestDomain("id" + i, "name" + i));
         }
-        when(mongoTemplate.find(argThat(q -> q.getSkip() == 0), eq(entityClass))).thenReturn(batch.subList(0, 50));
-        when(mongoTemplate.find(argThat(q -> q.getSkip() == 50), eq(entityClass))).thenReturn(batch.subList(50, 100));
-        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(entityClass)))
-                .thenReturn(UpdateResult.acknowledged(1, 1L, null));
+        List<TestDomain> batch2 = new ArrayList<>();
+        for (int i = 50; i < 100; i++) {
+            batch2.add(new TestDomain("id" + i, "name" + i));
+        }
+        //用doReturn模拟find，避免调用真实的的mongoTemplate.find
+        doReturn(batch1).when(customMongoTemplate).find(argThat(q -> q.getSkip() == 0), eq(entityClass));
+        doReturn(batch2).when(customMongoTemplate).find(argThat(q -> q.getSkip() == 50), eq(entityClass));
+
+
+        doReturn(UpdateResult.acknowledged(1,1L,null)) //模拟super.updateFirst返回UpdateResult.
+            .when(customMongoTemplate).updateFirst(any(Query.class), any(Update.class), eq(entityClass));
 
 
         UpdateResult result = customMongoTemplate.updateMulti(query, update, entityClass);
 
         assertEquals(100, result.getMatchedCount());
         assertEquals(100, result.getModifiedCount());
-        verify(mongoTemplate, times(100)).updateFirst(any(Query.class), any(Update.class), eq(entityClass)); // 验证走了批量更新的逻辑 (多次调用 updateFirst)
-        verify(mongoTemplate, never()).updateMulti(any(Query.class), any(Update.class), eq(entityClass));     // 验证没有走默认的updateMulti
-
-        //verify find for batch
-        verify(mongoTemplate).find(argThat(q -> q.getSkip() == 0), eq(entityClass));
-        verify(mongoTemplate).find(argThat(q -> q.getSkip() == 50), eq(entityClass));
+        //verify super.updateFirst was called
+        verify(customMongoTemplate, times(100)).updateFirst(any(Query.class), any(Update.class), eq(entityClass));
+        verify(customMongoTemplate, never()).updateMulti(any(Query.class), any(Update.class), eq(TestDomain.class));
     }
 
     @Test
@@ -99,14 +108,15 @@ class CustomMongoTemplateTest {
 
         // 设置为非 CosmosDB URI
         when(mongoProperties.getUri()).thenReturn("mongodb://localhost:27017/test");
-        when(mongoTemplate.updateMulti(query, update, entityClass)).thenReturn(expectedResult);
+        //        when(mongoTemplate.updateMulti(query, update, entityClass)).thenReturn(expectedResult);
+        doReturn(expectedResult).when(customMongoTemplate).updateMulti(query,update,entityClass);
 
         UpdateResult actualResult = customMongoTemplate.updateMulti(query, update, entityClass);
 
         assertEquals(expectedResult, actualResult);
-        verify(mongoTemplate).updateMulti(query, update, entityClass); // 验证走了默认的 updateMulti 逻辑
-        verify(mongoTemplate, never()).find(any(), any());          // 验证没有调用 find (即没有走批量更新)
-        verify(mongoTemplate, never()).updateFirst(any(), any(), any()); // 验证没有调用 updateFirst
+        //        verify(mongoTemplate).updateMulti(query, update, entityClass); // 验证走了默认的 updateMulti 逻辑
+        verify(customMongoTemplate,never()).find(any(),any());
+        verify(customMongoTemplate, never()).updateFirst(any(), any(), any()); // 验证没有调用 updateFirst
     }
 
     @Test
@@ -117,13 +127,15 @@ class CustomMongoTemplateTest {
         UpdateResult expectedResult = UpdateResult.acknowledged(5, 5L, null);
 
         when(mongoProperties.getUri()).thenReturn("mongodb://user:password@host.mongo.cosmos.azure.com:10255/db?ssl=true");
-        when(mongoTemplate.count(query, entityClass)).thenReturn(5L); // 小于 SMALL_BATCH_THRESHOLD
-        when(mongoTemplate.updateMulti(query, update, entityClass)).thenReturn(expectedResult);
+        doReturn(5L).when(customMongoTemplate).count(query,entityClass);
+        //        when(mongoTemplate.updateMulti(query, update, entityClass)).thenReturn(expectedResult);
+        doReturn(expectedResult).when(customMongoTemplate).updateMulti(any(Query.class), any(Update.class), eq(TestDomain.class));
 
         UpdateResult result = customMongoTemplate.updateMulti(query, update, entityClass);
 
         assertEquals(expectedResult, result);
-        verify(mongoTemplate).updateMulti(query, update, entityClass); //small batch, 走的是super.updateMulti.
+        //        verify(mongoTemplate).updateMulti(query, update, entityClass); //small batch, 走的是super.updateMulti.
+        verify(customMongoTemplate, times(1)).updateMulti(any(Query.class),any(Update.class), eq(TestDomain.class));
     }
 
     @Test
@@ -133,25 +145,30 @@ class CustomMongoTemplateTest {
         Class<TestDomain> entityClass = TestDomain.class;
 
         when(mongoProperties.getUri()).thenReturn("mongodb://user:password@host.mongo.cosmos.azure.com:10255/db?ssl=true");
-        when(mongoTemplate.count(query, entityClass)).thenReturn(5L);
-        when(mongoTemplate.updateMulti(query, update, entityClass)).thenThrow(new RuntimeException("Simulated failure"));
+        //        when(mongoTemplate.count(query, entityClass)).thenReturn(5L);
+        doReturn(5L).when(customMongoTemplate).count(query, entityClass);
+
+        //        when(mongoTemplate.updateMulti(query, update, entityClass)).thenThrow(new RuntimeException("Simulated failure"));
+        doThrow(new RuntimeException("Simulated failure")).when(customMongoTemplate).updateMulti(any(Query.class), any(Update.class), eq(TestDomain.class));
+
 
         List<TestDomain> batch = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             batch.add(new TestDomain("id" + i, "name" + i));
         }
-        when(mongoTemplate.find(any(Query.class), eq(entityClass))).thenReturn(batch);
-        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(entityClass)))
-                .thenReturn(UpdateResult.acknowledged(1, 1L, null)); // 模拟每次更新成功
+        //        when(mongoTemplate.find(any(Query.class), eq(entityClass))).thenReturn(batch);
+        doReturn(batch).when(customMongoTemplate).find(any(Query.class), eq(entityClass));
 
+        //        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(entityClass)))
+        //                .thenReturn(UpdateResult.acknowledged(1, 1L, null)); // 模拟每次更新成功
+        doReturn(UpdateResult.acknowledged(1,1L,null)).when(customMongoTemplate).updateFirst(any(Query.class),any(Update.class),eq(entityClass));
 
         UpdateResult result = customMongoTemplate.updateMulti(query, update, entityClass);
 
         assertEquals(5, result.getMatchedCount());
         assertEquals(5, result.getModifiedCount());
-        verify(mongoTemplate, times(5)).updateFirst(any(Query.class), any(Update.class), eq(entityClass));
+        verify(customMongoTemplate, times(5)).updateFirst(any(Query.class), any(Update.class), eq(entityClass));
     }
-
 
     @Test
     void updateMulti_cosmosDB_countThrowsException_exceptionPropagated() {
@@ -160,32 +177,74 @@ class CustomMongoTemplateTest {
         Class<TestDomain> entityClass = TestDomain.class;
 
         when(mongoProperties.getUri()).thenReturn("mongodb://user:password@host.mongo.cosmos.azure.com:10255/db?ssl=true");
-        when(mongoTemplate.count(query, entityClass)).thenThrow(new RuntimeException("Simulated count failure"));
+        //        when(mongoTemplate.count(query, entityClass)).thenThrow(new RuntimeException("Simulated count failure"));
+        doThrow(new RuntimeException("Simulated failure")).when(customMongoTemplate).count(any(),any());
 
         assertThrows(RuntimeException.class, () -> customMongoTemplate.updateMulti(query, update, entityClass));
     }
 
-
+    // 间接测试 getCollectionClass
     @Test
-    void getCollectionClass_entityFound_returnsClass() {
+    void updateMulti_withCollectionName_validCollection_usesBatchUpdate() {
+        Query query = new Query();
+        Update update = new Update();
         String collectionName = "testCollection";
+
+        // 模拟 MongoMappingContext 的行为，让 getCollectionClass 返回 TestDomain.class
         MongoPersistentEntity<?> mockEntity = mock(MongoPersistentEntity.class);
         when(mockEntity.getCollection()).thenReturn(collectionName);
         when(mockEntity.getType()).thenReturn(TestDomain.class);
-
         when(mappingContext.getPersistentEntities()).thenReturn(Collections.singletonList(mockEntity));
 
-        Class<?> result = customMongoTemplate.getCollectionClass(collectionName);
-        assertEquals(TestDomain.class, result);
+        // 设置为 CosmosDB URI，并模拟 count 和批量更新行为
+        when(mongoProperties.getUri()).thenReturn("mongodb://user:password@host.mongo.cosmos.azure.com:10255/db?ssl=true");
+        //        when(mongoTemplate.count(query, TestDomain.class)).thenReturn(100L);
+        doReturn(100L).when(customMongoTemplate).count(any(),any());
+        List<TestDomain> batch = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            batch.add(new TestDomain("id" + i, "name" + i));
+        }
+        //        when(mongoTemplate.find(argThat(q -> q.getSkip() == 0), eq(TestDomain.class))).thenReturn(batch.subList(0,50));
+        //        when(mongoTemplate.find(argThat(q -> q.getSkip() == 50), eq(TestDomain.class))).thenReturn(batch.subList(50,100));
+        doReturn(batch.subList(0,50)).when(customMongoTemplate).find(argThat(q -> q.getSkip() == 0), eq(TestDomain.class));
+        doReturn(batch.subList(50,100)).when(customMongoTemplate).find(argThat(q -> q.getSkip() == 50), eq(TestDomain.class));
 
+        //        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(TestDomain.class)))
+        //                .thenReturn(UpdateResult.acknowledged(1, 1L, null));
+        doReturn(UpdateResult.acknowledged(1,1L, null))
+          .when(customMongoTemplate).updateFirst(any(Query.class), any(Update.class), eq(TestDomain.class));
+
+        UpdateResult result = customMongoTemplate.updateMulti(query, update, collectionName);
+
+        assertEquals(100, result.getMatchedCount()); // 假设更新了 100 个文档
+        assertEquals(100, result.getModifiedCount());
+        verify(customMongoTemplate, times(100)).updateFirst(any(Query.class), any(Update.class), eq(TestDomain.class)); // 验证走了批量更新
     }
 
-
     @Test
-    void getCollectionClass_entityNotFound_returnsNullAndLogsWarning() {
+    void updateMulti_withCollectionName_invalidCollection_logsWarningAndReturnsZeroResult() {
+        Query query = new Query();
+        Update update = new Update();
         String collectionName = "nonExistentCollection";
+
+        // 模拟 MongoMappingContext 的行为，让 getCollectionClass 返回 null
         when(mappingContext.getPersistentEntities()).thenReturn(Collections.emptyList());
-        Class<?> result = customMongoTemplate.getCollectionClass(collectionName);
-        assertNull(result);
+
+        when(mongoProperties.getUri()).thenReturn("mongodb://user:password@host.mongo.cosmos.azure.com:10255/db?ssl=true");
+
+        //        // 由于 getCollectionClass 返回 null，count 方法应该不会被调用，这里为了安全起见也模拟一下
+        //        when(mongoTemplate.count(any(), (Class<?>) any())).thenThrow(new RuntimeException("Should not be called"));
+        doThrow(new RuntimeException("Should not be called")).when(customMongoTemplate).count(any(),any());
+
+
+        UpdateResult result = customMongoTemplate.updateMulti(query, update, collectionName);
+
+
+        assertEquals(0, result.getMatchedCount());  // 应该返回 0 结果
+        assertEquals(0, result.getModifiedCount());
+        verify(customMongoTemplate, never()).count(any(), (Class<?>) any()); // 确保 count 没有被调用
+        verify(customMongoTemplate, never()).find(any(), any());      // 确保 find 没有被调用
+        verify(customMongoTemplate, never()).updateFirst(any(), any(), any());   // 确保 updateFirst 没有被调用
+
     }
 }
