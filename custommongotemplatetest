@@ -1,0 +1,81 @@
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+
+public class CustomMongoTemplateTest {
+
+    @Test
+    void updateMulti_WhenCosmosDBAndLargeData_CallsProcessCosmosDBUpdate() {
+        // 配置MongoProperties模拟CosmosDB
+        MongoProperties mongoProperties = new MongoProperties();
+        mongoProperties.setUri("mongodb://app.cosmos.azure.com:10255/db?ssl=true&retrywrites=false");
+
+        // 创建被测试的CustomMongoTemplate实例，并spy以便部分mock
+        CustomMongoTemplate customMongoTemplate = spy(new CustomMongoTemplate(mockMongoDbFactory, mockConverter, mongoProperties));
+
+        // 模拟count返回20条记录，触发分批处理
+        doReturn(20L).when(customMongoTemplate).count(any(Query.class), eq(MyEntity.class));
+
+        // 调用updateMulti方法
+        Query query = new Query();
+        Update update = new Update().set("field", "value");
+        customMongoTemplate.updateMulti(query, update, MyEntity.class);
+
+        // 验证processCosmosDBUpdate被调用一次
+        verify(customMongoTemplate, times(1)).processCosmosDBUpdate(any(Query.class), any(Update.class), eq(MyEntity.class));
+    }
+
+    @Test
+    void processCosmosDBUpdate_WithLargeData_ProcessesInBatches() {
+        // 配置CosmosDB环境和模拟数据
+        MongoProperties mongoProperties = new MongoProperties();
+        mongoProperties.setUri("mongodb://cosmos.example.com");
+
+        CustomMongoTemplate customMongoTemplate = spy(new CustomMongoTemplate(mockMongoDbFactory, mockConverter, mongoProperties));
+
+        // 设置总数据量为20，batchSize应为10（根据determineBatchSize逻辑）
+        long total = 20;
+        doReturn(total).when(customMongoTemplate).count(any(Query.class), eq(MyEntity.class));
+
+        // 模拟每次find返回10个文档
+        List<MyEntity> batch = IntStream.range(0, 10)
+                .mapToObj(i -> new MyEntity("id" + i))
+                .collect(Collectors.toList());
+        doReturn(batch).when(customMongoTemplate).find(any(Query.class), eq(MyEntity.class));
+
+        // 执行更新
+        UpdateResult result = customMongoTemplate.processCosmosDBUpdate(new Query(), new Update(), MyEntity.class);
+
+        // 验证分两批处理（总20条，每批10条）
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        verify(customMongoTemplate, times(2)).find(queryCaptor.capture(), eq(MyEntity.class));
+
+        // 检查第一批次skip=0, limit=10
+        Query firstQuery = queryCaptor.getAllValues().get(0);
+        assertThat(firstQuery.getSkip()).isEqualTo(0);
+        assertThat(firstQuery.getLimit()).isEqualTo(10);
+
+        // 检查第二批次skip=10, limit=10
+        Query secondQuery = queryCaptor.getAllValues().get(1);
+        assertThat(secondQuery.getSkip()).isEqualTo(10);
+        assertThat(secondQuery.getLimit()).isEqualTo(10);
+
+        // 确认总修改数正确
+        assertThat(result.getModifiedCount()).isEqualTo(20);
+    }
+}
+
+// 辅助的测试实体类
+class MyEntity extends BaseDomain {
+    public MyEntity(String id) {
+        setId(id);
+    }
+}
