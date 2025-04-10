@@ -1,0 +1,60 @@
+export default {
+	appname: "appsmith-chat-widget",
+	// Store the max and total reponses to limit public usage.
+  // Set this to zero to disable.
+	maxResponses: 5,
+	// This stores the total chat history, and will be modified as the user asks questions
+	history: [{role: "CHATBOT", message: "How can I help you today?"}],
+	messages:[{"role": "system", content: "You are an AI assistant designed to provide helpful, friendly and professional conversations. Your primary goals are:\n1. Answer questions accurately using up-to-date knowledge (cutoff: October 2023)\n2. Maintain natural and approachable tone \n3. Adhere to ethical guidelines (avoid harmful/discriminatory content)\n4. Clarify ambiguous requests politely\n5. Keep responses concise (under 300 words) unless detailed explanations are required\n\nWhen responding:\n- Use clear paragraph breaks for readability\n- Present complex information in bullet points when applicable\n- Always verify factual claims against known data\n- Proactively suggest relevant follow-up questions\n- Acknowledge limitations honestly if beyond capabilities"},
+						{"role": "assistant", content: "How can I help you today?"}],
+	// The main function - send the user prompt to the AI and add the result to the history for viewing.
+	async submit(){
+		let newMessage = { role: "USER", message: inp_userPrompt.text };
+		this.history.push(newMessage);
+		let requestMessage = { "role": "user", "content": inp_userPrompt.text };
+		this.messages.push(requestMessage);
+
+		// Send the user prompt to the AI
+		await this.send();
+
+		// Reset the input widget and prepare for the next prompt.
+		resetWidget('inp_userPrompt');
+		return this.history;
+	},
+
+	async send() {
+		// Only send the message if the user is under the max amount.
+			let reply = await addMessage.run();
+			
+			let reponseMessage = reply.choices[0].message;
+			this.messages.push(reponseMessage);
+			this.history.push({role:"CHATBOT", message: reponseMessage.content});
+			this.totalResponses ++;
+			storeValue(this.appname, this.history);
+		
+		
+	},
+	
+	totalResponses() {
+		return this.history.filter(item => item.role === "USER").length;
+	},
+
+	onload() {
+		let chatHistory = appsmith.store[this.appname];
+		if (chatHistory != undefined) {
+			this.history = chatHistory;
+		}
+	},
+
+	reset() {
+		removeValue(this.appname);
+		this.totalResponses = 0;
+		this.history = [{role: "CHATBOT", message: "How can I help you today?"}];
+		this.messages = [{"role": "assistant", content: "How can I help you today?"}];
+	},
+	
+	test() {
+		console.log(appsmith.store[this.appname]);
+	}
+
+}
