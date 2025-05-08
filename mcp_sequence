@@ -1,0 +1,17 @@
+sequenceDiagram
+    actor User
+    participant OpenWebUI
+    participant LLM
+    participant MCPO
+    participant MCP_Server
+
+    User->>OpenWebUI: Ask "What time is it?"
+    OpenWebUI->>LLM: Send prompt with tool descriptions
+    LLM->>OpenWebUI: Return tool invocation instruction (function_call)
+    OpenWebUI->>MCPO: Forward request (HTTP POST /tools)
+    MCPO->>MCP_Server: Convert protocol to MCP stdio
+    MCP_Server-->>MCPO: Return time data
+    MCPO-->>OpenWebUI: Return OpenAPI-formatted result
+    OpenWebUI->>LLM: Pass tool execution result
+    LLM->>OpenWebUI: Generate natural language response
+    OpenWebUI->>User: Display "Current time is 14:30"
