@@ -1,12 +1,17 @@
+好的，这是根据我们最新讨论（取消严格的端到端工作流，改为将多个相关测试用例聚合为描述单一用户行为的用户故事）修改后的完整英文版Prompt。
 
-**Prompt: Generate Detailed Requirements Document with Workflow from Test Case Excel Data**
+This prompt aims to guide GPT-4o to first understand individual test cases, then identify groups of test cases that collectively describe a single user behavior, and finally synthesize these into User Stories with detailed, traceable Acceptance Criteria.
+
+---
+
+**Prompt: Generate Synthesized Requirements Document from Grouped Test Case Data**
 
 **Your Task:**
-You are an AI assistant. Your goal is to generate a single, consolidated, and detailed requirements document by reverse-engineering it from a provided list of test cases. Assume these test cases are rows from an Excel file or csv format text. The document must emphasize granularity, direct traceability to individual test cases, and reflect any inherent workflow or sequential order present in the test cases.
+You are an AI assistant. Your goal is to generate a single, consolidated, and detailed requirements document by reverse-engineering it from a provided list of test cases (assumed to be from an Excel file). The document must identify groups of related test cases that collectively describe a single, coherent user behavior or action, and then synthesize these groups into User Stories. The requirements should emphasize clarity, direct traceability to the underlying test cases, and logical organization.
 
 **Input Data (for each test case):**
 Each test case will have the following fields:
-* `Key` (Unique identifier for the test case, may imply sequence)
+* `Key` (Unique identifier for the test case)
 * `Summary` (Brief title of the test case)
 * `Description` (Detailed explanation of the test case or its context)
 * `Test Type` (e.g., Functional, Performance, UI, API, Security)
@@ -22,7 +27,7 @@ Each test case will have the following fields:
 Please structure the requirements document as follows:
 
 **1. Introduction & Overview**
-    * Briefly state the purpose of this document (i.e., reverse-engineered requirements from test cases, emphasizing detail and workflow).
+    * Briefly state the purpose of this document (i.e., reverse-engineered requirements derived from test cases, focusing on synthesizing user behaviors from groups of tests).
     * Summarize the overall scope based on the components and types of test cases present.
 
 **2. User Roles & Personas**
@@ -31,27 +36,30 @@ Please structure the requirements document as follows:
 
 **3. Functional Requirements**
     * Organize this section by **Features/Modules**, primarily derived from the `Component` field. List Features/Modules in a logical order if discernible.
-    * **Workflow Consideration:** It is crucial to represent the workflow implied by the sequence of your test cases. Assume the order in which test cases are provided (e.g., by `Key` or their row order in the conceptual Excel sheet) reflects a procedural or user workflow.
+    * **Core Synthesis Logic:** The primary task here is to identify groups of test cases that, when taken together, describe the various facets, steps, or validation points of a **single, coherent user behavior or action.**
     * Within each Feature/Module:
         * Provide a brief description of the feature.
-        * List **User Stories** that belong to this feature. **These User Stories MUST be generated in an order that reflects the test case workflow.**
-            * **Guidance for User Stories (CRITICAL: Emphasize Detail & Workflow):**
-                * **Granularity & Directness:** Avoid broad summarization. User Stories should be highly granular. Aim to create User Stories that cover **individual test cases** or, if multiple test cases represent a single, indivisible small step in a user's workflow, a **very small, logically connected sequence of those test cases.** The objective is to ensure that the details of each test case are clearly represented.
-                * **Derivation:** The "I want to..." part of the User Story should be derived as directly as possible from the test case `Summary` or the primary action(s) described in the test case(s) it represents.
-                * **User Story Format:** Continue to frame each User Story in the format: "As a [identified User Role], I want to [specific goal/action closely tied to test case(s)], so that [business value/reason]."
-                * **"So that..." (Business Value):** This will often need careful inference, even for granular stories. Attempt to infer a plausible business value related to the specific action. Clearly label it as inferred (e.g., "[Inferred Value]: ...") or state: "[Business value to be confirmed by stakeholders]."
-                * **Sequential Presentation & Workflow Labeling:** Present User Stories within their Feature/Module according to the workflow sequence implied by the source test cases. Where appropriate, use subheadings (e.g., "Workflow Step 1: [Action Name]", "Workflow Step 2: [Action Name]") or a clearly numbered list to delineate stages of the workflow. Each stage may contain one or more granular User Stories.
-                * **Priority:** Assign a priority to the User Story based on the `Priority` of the underlying test case(s).
-            * For each User Story, list its **Acceptance Criteria (ACs)**:
-                * **Guidance for ACs (CRITICAL: Direct & Unsummarized):**
-                    * Each User Story's Acceptance Criteria **MUST directly, explicitly, and comprehensively correspond to the details of the specific test case(s) it covers.** Do NOT summarize or generalize the ACs.
-                    * If a User Story corresponds to a single test case, its ACs are the direct representation of that test case's `Step/Action`, `Data`, and `Expected Result` (or its `Gherkin Definition`).
-                    * If a User Story covers a small, sequential group of test cases (representing one workflow step), clearly list the ACs derived from *each* of those constituent test cases, maintaining their sequence.
+        * List **User Stories**. Each User Story should represent a distinct user behavior synthesized from one or more related test cases.
+            * **Guidance for User Stories (CRITICAL: Synthesize from Related Test Cases):**
+                * **Identify Related Test Case Groups:** Analyze the test cases within a `Component`. Look for sets of test cases whose `Summary`, `Description`, or `Step/Action` fields suggest they collectively address a unified user goal or a specific, atomic user interaction (e.g., various validation checks for 'user account creation,' different aspects of 'submitting a complex form,' or positive/negative/edge case scenarios for a single logical action). A single user behavior might involve several `Step/Action` sequences from different test cases.
+                * **One Story per Synthesized Behavior:** For each identified group of test cases representing a single, coherent user behavior, create **one** User Story.
+                * **Derivation of "I want to...":** The "I want to..." part of the User Story should describe the **overall user behavior or goal** that this group of test cases collectively validates.
+                * **User Story Format:** Frame each User Story as: "As a [identified User Role], I want to [overall user behavior/goal derived from the test case group], so that [business value/reason for this overall behavior]."
+                * **"So that..." (Business Value):** Infer a plausible business value for the *overall synthesized behavior*. Clearly label it as inferred (e.g., "[Inferred Value]: ...") or state: "[Business value to be confirmed by stakeholders]."
+                * **Handling Ungroupable Test Cases (Fallback):** If a test case is highly specific and cannot be logically grouped with others to form a larger user behavior, it may then form a very granular User Story on its own, focusing on its individual detail.
+                * **Sequence within a Feature:** If there's a logical sequence to these synthesized user behaviors within a Feature/Module, try to present the User Stories in that order.
+                * **Priority:** Assign a priority to the User Story based on the highest `Priority` among the test cases it groups, or a reasoned assessment of the overall behavior's importance.
+            * For each User Story (representing a synthesized user behavior), list its **Acceptance Criteria (ACs)**:
+                * **Guidance for ACs (CRITICAL: Composite, Detailed, and Traceable):**
+                    * The Acceptance Criteria for a User Story **MUST be derived from ALL the individual test cases that were grouped together** to form that User Story.
+                    * For each test case within the group, its core elements (`Step/Action`, `Data`, `Expected Result`, or `Gherkin Definition`) should be listed as one or more distinct ACs under the User Story.
+                    * **Maintain full clarity and avoid summarization of individual test case details when forming ACs.** The goal is to ensure all checks from the source test cases are explicitly covered.
                     * Frame ACs clearly, for example:
                         "Given [precondition derived from test case `Description`/context or Gherkin `Given`],
                         When [test case `Step/Action` combined with `Data` or Gherkin `When`],
                         Then [test case `Expected Result` or Gherkin `Then`]."
-                    * **Crucially, reference the source test case `Key` for each AC or set of ACs** to ensure full traceability (e.g., "AC1 (Ref: TC001.1): ...", "AC2 (Ref: TC001.2): ...").
+                    * **Crucially, reference the source test case `Key` for each AC or set of ACs** to ensure full traceability to the original test data (e.g., "AC1 (Derived from Test Case Key: TC001): ...", "AC2 (Derived from Test Case Key: TC002): ...").
+                    * If the test cases within a group have an inherent sequence that contributes to the overall behavior (e.g., step 1, step 2 of an action), try to list their derived ACs in that logical order.
 
 **4. Non-Functional Requirements (NFRs)**
     * Identify and list NFRs based on `Test Type` (e.g., Performance, Security, Usability).
@@ -69,11 +77,14 @@ Please structure the requirements document as follows:
     * List any assumptions made during the reverse-engineering process or any constraints evident from the test cases.
 
 **General Instructions:**
-* The primary goal is to create a detailed and traceable requirements document that reflects individual test case specifics and their workflow, avoiding over-generalization.
+* The primary goal is to synthesize User Stories representing coherent user behaviors by intelligently grouping related test cases, ensuring all details from those test cases are captured in the Acceptance Criteria.
+* Avoid over-summarization at the AC level; ensure detailed traceability.
 * Maintain a clear, organized, and professional tone.
 * When information is inferred (especially business value and user roles) or requires stakeholder validation, clearly indicate this.
-* The final document should be a coherent set of requirements derived logically and transparently from the test case data, with an emphasis on representing the inherent sequence and granularity of the original tests.
+* The final document should be a coherent set of requirements derived logically and transparently from the test case data.
 
 ---
 
-This revised prompt places much stronger emphasis on detail, direct mapping from test cases, and preserving workflow. It should guide the AI to produce a requirements document that is less summarized and more closely aligned with your specific test case structure. Remember to replace bracketed placeholders like "[your request here]" if you use parts of this to build more specific queries around it.
+这个Prompt现在更加侧重于指导模型进行“**多对一**”的映射：多个相关的测试用例（共同描述一个行为）映射到一个用户故事，而这个用户故事的验收标准则详细地反映了所有这些来源测试用例的具体内容。
+
+请您试用这个Prompt，看看结果是否更接近您的期望。如果模型在“自动聚合相关测试用例”这一步上仍然有困难，我们可能就需要考虑更明确的预处理步骤或多轮Prompt策略了。
