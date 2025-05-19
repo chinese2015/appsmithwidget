@@ -1,76 +1,79 @@
 
+**Prompt: Generate Detailed Requirements Document with Workflow from Test Case Excel Data**
 
-Your Task:
-Your objective is to analyze, synthesize, and refine data from an Excel or csv file containing multiple test cases to reverse-engineer and generate a single, well-structured requirements document.
+**Your Task:**
+You are an AI assistant. Your goal is to generate a single, consolidated, and detailed requirements document by reverse-engineering it from a provided list of test cases. Assume these test cases are rows from an Excel file or csv format text. The document must emphasize granularity, direct traceability to individual test cases, and reflect any inherent workflow or sequential order present in the test cases.
 
-Input Data Description:
-The input data will be an Excel table where each row represents a single test case, including the following columns:
+**Input Data (for each test case):**
+Each test case will have the following fields:
+* `Key` (Unique identifier for the test case, may imply sequence)
+* `Summary` (Brief title of the test case)
+* `Description` (Detailed explanation of the test case or its context)
+* `Test Type` (e.g., Functional, Performance, UI, API, Security)
+* `Priority` (e.g., High, Medium, Low)
+* `Component` (The system module or component being tested)
+* `Step/Action` (Individual actions a tester performs)
+* `Data` (Input data for the steps)
+* `Expected Result` (What the outcome should be if the test passes)
+* `Gherkin Definition` (Test case in Gherkin language: Given/When/Then, if available)
+* `Unstructured Definition` (Additional free-form notes or context)
 
-Key (Unique identifier for the test case)
-Summary (A brief title/summary of the test case)
-Description (Detailed descriptive information for the test case)
-Test Type (e.g., Functional, Performance, UI, API, Security)
-Priority (Priority of the test case, e.g., High, Medium, Low)
-Component (The system module or component name being tested)
-Step/Action (Specific steps or actions to be performed during the test)
-Data (Input data used in the test steps)
-Expected Result (The expected correct outcome after executing the test steps)
-Gherkin Definition (If BDD is used, the Gherkin syntax test scenario: Given/When/Then)
-Unstructured Definition (Other unstructured definitions or notes)
-Output Requirements Document Structure:
-Please organize the generated requirements document according to the following structure:
+**Output Document Structure:**
+Please structure the requirements document as follows:
 
-1. Introduction & Overview
-* Briefly state the purpose of this document (i.e., system requirement specifications reverse-engineered from the provided test case data).
-* Summarize the system scope covered by this document and the main aspects tested, based on the distribution of Component and Test Type entries.
+**1. Introduction & Overview**
+    * Briefly state the purpose of this document (i.e., reverse-engineered requirements from test cases, emphasizing detail and workflow).
+    * Summarize the overall scope based on the components and types of test cases present.
 
-2. User Roles
-* Identify and list the primary user roles that interact with the system (e.g., Administrator, Standard Registered User, Guest, Editor).
-* Derivation Guidance:
-* Analyze Summary, Description, and Step/Action to determine the initiators of actions and target users.
-* If the Gherkin Definition includes "As a &lt;role>" descriptions, prioritize those.
-* If roles are not explicit, list potential roles and clearly mark them as "[To be confirmed with stakeholders]".
+**2. User Roles & Personas**
+    * Identify and list potential user roles involved (e.g., Administrator, Standard User, Guest).
+    * **Guidance:** Infer roles from `Step/Action`, `Summary`, or `Description`. If Gherkin "As a..." statements are present within `Gherkin Definition`, use those. If roles are not explicit, list common potential roles and note that this needs stakeholder validation (e.g., "[User Role to be confirmed by stakeholders]").
 
-3. Functional Requirements
-* This section should be organized by major Features/Modules.
-* Feature/Module Breakdown: Primarily use the values in the Component column for categorization. Each distinct Component can be treated as a feature or module.
-* Under each Feature/Module, include one or more User Stories or functional points.
-* Guidance for User Stories:
-* Aggregate related test cases within the same Component that share similar themes in their Summary or Description to formulate User Stories.
-* User Story Format: "As a &lt;identified User Role>, I want to &lt;function or action inferred from the Summary, Description, or core objective of the test case group>, so that &lt;inferred or to-be-confirmed business value/reason>."
-* Crucial Note - "So that..." (Business Value):
-* Test cases typically do not explicitly state business value. You will need to:
-* Attempt to infer a reasonable business value based on the functional goal, clearly labeling it as: "[Inferred Value]: ..."
-* Alternatively, if inference is difficult, state clearly: "[Business value to be confirmed with stakeholders]".
-* User Story Priority: This can be set based on the Priority of the underlying test cases (e.g., by taking the highest priority or a consolidated assessment).
-* For each User Story, list its Acceptance Criteria (ACs):
-* Guidance for Acceptance Criteria:
-* The core content of each relevant test case forms one or more ACs.
-* If a Gherkin Definition is complete and available, use it directly as an AC (Given/When/Then format).
-* Otherwise, derive ACs from Step/Action (user actions), Data (input), and Expected Result (outcome). These can be phrased as: "Scenario: [Precondition, possibly from Description or implicit]. When [user action and input data], Then [system's expected response]."
-* Use the test case Key as a reference ID for its corresponding AC.
+**3. Functional Requirements**
+    * Organize this section by **Features/Modules**, primarily derived from the `Component` field. List Features/Modules in a logical order if discernible.
+    * **Workflow Consideration:** It is crucial to represent the workflow implied by the sequence of your test cases. Assume the order in which test cases are provided (e.g., by `Key` or their row order in the conceptual Excel sheet) reflects a procedural or user workflow.
+    * Within each Feature/Module:
+        * Provide a brief description of the feature.
+        * List **User Stories** that belong to this feature. **These User Stories MUST be generated in an order that reflects the test case workflow.**
+            * **Guidance for User Stories (CRITICAL: Emphasize Detail & Workflow):**
+                * **Granularity & Directness:** Avoid broad summarization. User Stories should be highly granular. Aim to create User Stories that cover **individual test cases** or, if multiple test cases represent a single, indivisible small step in a user's workflow, a **very small, logically connected sequence of those test cases.** The objective is to ensure that the details of each test case are clearly represented.
+                * **Derivation:** The "I want to..." part of the User Story should be derived as directly as possible from the test case `Summary` or the primary action(s) described in the test case(s) it represents.
+                * **User Story Format:** Continue to frame each User Story in the format: "As a [identified User Role], I want to [specific goal/action closely tied to test case(s)], so that [business value/reason]."
+                * **"So that..." (Business Value):** This will often need careful inference, even for granular stories. Attempt to infer a plausible business value related to the specific action. Clearly label it as inferred (e.g., "[Inferred Value]: ...") or state: "[Business value to be confirmed by stakeholders]."
+                * **Sequential Presentation & Workflow Labeling:** Present User Stories within their Feature/Module according to the workflow sequence implied by the source test cases. Where appropriate, use subheadings (e.g., "Workflow Step 1: [Action Name]", "Workflow Step 2: [Action Name]") or a clearly numbered list to delineate stages of the workflow. Each stage may contain one or more granular User Stories.
+                * **Priority:** Assign a priority to the User Story based on the `Priority` of the underlying test case(s).
+            * For each User Story, list its **Acceptance Criteria (ACs)**:
+                * **Guidance for ACs (CRITICAL: Direct & Unsummarized):**
+                    * Each User Story's Acceptance Criteria **MUST directly, explicitly, and comprehensively correspond to the details of the specific test case(s) it covers.** Do NOT summarize or generalize the ACs.
+                    * If a User Story corresponds to a single test case, its ACs are the direct representation of that test case's `Step/Action`, `Data`, and `Expected Result` (or its `Gherkin Definition`).
+                    * If a User Story covers a small, sequential group of test cases (representing one workflow step), clearly list the ACs derived from *each* of those constituent test cases, maintaining their sequence.
+                    * Frame ACs clearly, for example:
+                        "Given [precondition derived from test case `Description`/context or Gherkin `Given`],
+                        When [test case `Step/Action` combined with `Data` or Gherkin `When`],
+                        Then [test case `Expected Result` or Gherkin `Then`]."
+                    * **Crucially, reference the source test case `Key` for each AC or set of ACs** to ensure full traceability (e.g., "AC1 (Ref: TC001.1): ...", "AC2 (Ref: TC001.2): ...").
 
-4. Non-Functional Requirements (NFRs)
-* Identify and consolidate NFRs based on the Test Type (e.g., Performance, Security, Usability, Compatibility).
-* Derivation Guidance:
-* Filter test cases where the Test Type relates to NFRs (e.g., "Performance," "Security").
-* Translate the Expected Result of these test cases into specific NFR statements. For example: "Performance: [A specific action, from the test case context] should be completed within [X seconds, from Expected Result]."
-* NFRs can also be associated with a corresponding Priority.
+**4. Non-Functional Requirements (NFRs)**
+    * Identify and list NFRs based on `Test Type` (e.g., Performance, Security, Usability).
+    * **Guidance:** Group test cases with NFR-related `Test Type`.
+    * Describe each NFR by directly referencing the specifics from the relevant test case(s). For example: "Performance (Ref: TC075): The [specific action from test case TC075] must complete within [time from TC075's Expected Result]."
+    * Include `Priority` if available for these NFR-related test cases.
 
-5. Data Requirements (Overview)
-* Provide a high-level, summary description of key data entities, types, or formats frequently observed in the Data column and Description.
-* This section is not intended to be a complete data dictionary, but rather a high-level observation.
+**5. Data Requirements (High-Level Observations)**
+    * Briefly describe any recurring or critical data entities or types observed in the `Data` columns or `Description` of test cases. This is not a full data dictionary.
 
-6. User Interface Requirements (Overview)
-* Based on recurring key UI elements (e.g., buttons, forms, specific information display areas) and interaction flows mentioned in Step/Action and Expected Result, provide a high-level description.
-* Focus on "what needs to be on the UI" rather than detailed visual design.
+**6. User Interface Requirements (High-Level Observations)**
+    * Briefly describe key UI elements or interactions consistently mentioned in `Step/Action` or `Expected Result` across multiple test cases. Focus on *what* needs to be on the UI, not detailed design.
 
-7. Assumptions and Constraints
-* List any significant assumptions made during the reverse-engineering process or any obvious constraints evident from the test cases.
+**7. Assumptions and Constraints**
+    * List any assumptions made during the reverse-engineering process or any constraints evident from the test cases.
 
-General Instructions:
+**General Instructions:**
+* The primary goal is to create a detailed and traceable requirements document that reflects individual test case specifics and their workflow, avoiding over-generalization.
+* Maintain a clear, organized, and professional tone.
+* When information is inferred (especially business value and user roles) or requires stakeholder validation, clearly indicate this.
+* The final document should be a coherent set of requirements derived logically and transparently from the test case data, with an emphasis on representing the inherent sequence and granularity of the original tests.
 
-The goal is synthesis, refinement, and structured presentation, not just a simple listing of test cases.
-Maintain a clear, professional, and well-organized writing style.
-For any inferred information (especially user roles and business value) or items requiring further stakeholder confirmation, clearly indicate this.
-Ensure the final document is logically coherent and clearly shows the derivation path from test data to requirements.
+---
+
+This revised prompt places much stronger emphasis on detail, direct mapping from test cases, and preserving workflow. It should guide the AI to produce a requirements document that is less summarized and more closely aligned with your specific test case structure. Remember to replace bracketed placeholders like "[your request here]" if you use parts of this to build more specific queries around it.
