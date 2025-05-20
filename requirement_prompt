@@ -1,23 +1,11 @@
-您好！我明白了，需求再次细化了，这非常好，能帮助我们更精确地定义期望的输出。
-
-核心变化点在于：
-1.  **输出单元的改变**：不再是整个Excel对应一份大文档，而是Excel中的**“一组相关的测试用例 (a group of related test cases)”** 生成一份独立的需求文档。
-2.  **组内可包含多个User Stories**：之前是一组TC对应一个User Story，现在是“一组相关的测试用例”这个更大的单元内，可以提炼出**多个User Stories**。
-3.  **连续输出多份文档**：因为一个Excel可能包含多组这样的“相关测试用例”，所以模型需要能够识别出这些组，并为每一组生成一份独立的文档（在同一个输出流中清晰分隔）。
-4.  **其余要求不变**：User Story格式、ACs的详细度和可追溯性、英文输出、推断业务价值等要求依然保留。
-
-这实质上是引入了一个两层级的聚合：
-* **第一层聚合**：从所有测试用例中识别出若干个“**相关测试用例组 (Related Test Case Group)**”。每个这样的组将构成一份独立的需求文档。
-* **第二层聚合**：在每个“相关测试用例组”内部，再从中提炼出**一个或多个用户故事 (User Stories)**，每个用户故事由该组内的一部分测试用例支持。
-
-这对模型的理解和组织能力提出了更高的要求。以下是根据您最新要求调整后的完整英文Prompt：
+好的，我们来整合一下，生成一个最终版本的英文Prompt。这个版本将包含我们讨论过的所有核心要求（从Excel测试用例生成多份独立的需求文档，每份文档对应一组相关测试用例，组内可包含多个用户故事，用户故事和ACs要求详细且可追溯），并特别加入旨在**增强输出内容详细程度、避免过于简略**的指令。
 
 ---
 
-**Prompt: Generate Multiple, Focused Requirements Documents from Thematically Grouped Test Case Sets**
+**Prompt: Generate Exhaustively Detailed, Multi-Part Requirements Documents from Thematically Grouped Test Case Data**
 
 **Your Task:**
-You are an AI assistant. Your goal is to process a comprehensive list of test cases (assumed to be from an Excel file) and generate **multiple, separate (but sequentially outputted) requirements documents**. Each document will correspond to a **distinct, thematically related group of test cases** identified from the input. Within each such document, you will synthesize **one or more User Stories**, with each User Story being supported by a subset of test cases from that specific group. The requirements must be detailed, traceable, and clearly structured.
+You are an AI assistant. Your primary goal is to process a comprehensive list of test cases (assumed to be from an Excel file) and generate **multiple, separate (but sequentially outputted), and exceptionally detailed and exhaustive requirements documents**. Each document will correspond to a **distinct, thematically related group of test cases** identified from the input. Within each such document, you will synthesize **one or more User Stories**, with each User Story being supported by a subset of test cases from that specific group. The document must emphasize **maximum granularity**, direct traceability to individual test cases, and logical organization. **Avoid brevity; prioritize thoroughness, comprehensive explanations, and completeness in all sections.** The output should be verbose and self-explanatory, aiming to leave no room for ambiguity for any reader, even if they are not deeply familiar with the original test cases.
 
 **Input Data (for each test case):**
 Each test case will have the following fields:
@@ -34,7 +22,7 @@ Each test case will have the following fields:
 * `Unstructured Definition` (Additional free-form notes or context)
 
 **Output Structure:**
-Your output should be a single continuous text stream, but internally structured to represent multiple, distinct requirements documents. Use clear separators (e.g., Markdown horizontal rules `---` or specific heading conventions) between each generated document.
+Your output should be a single continuous text stream, but internally structured to represent multiple, distinct requirements documents. Use clear separators (e.g., Markdown horizontal rules `---` or specific heading conventions like `=== DOCUMENT BREAK ===`) between each generated document.
 
 **For each "Related Test Case Group" identified from the input, generate a "Mini Requirements Document" with the following structure:**
 
@@ -42,12 +30,12 @@ Your output should be a single continuous text stream, but internally structured
     *(Clearly indicate the start of a new document section for each group)*
 
 **1. Overview of this Document Scope**
-    * Briefly describe the overall feature, user journey, or coherent set of functionalities covered by this specific group of test cases.
+    * Provide a **detailed overview (e.g., a descriptive paragraph or several well-developed sentences)**, explaining the purpose, boundaries, and key functionalities of this functional area covered by this specific group of test cases. Elaborate on its significance.
     * Mention the primary `Component` associated with this group.
 
 **2. User Roles & Personas (Relevant to this Document Scope)**
     * Identify user roles pertinent to the functionalities covered in *this specific document scope*.
-    * **Guidance:** Infer from `Step/Action`, `Summary` within this group. If not explicit, note as "[User Role to be confirmed for this scope]".
+    * **Guidance:** Infer from `Step/Action`, `Summary` within this group. If not explicit, note as "[User Role to be confirmed for this scope]". **Provide a brief explanation for each identified role in relation to this scope.**
 
 **3. Functional Requirements (for this Document Scope)**
     * **Synthesize one or more User Stories** from the test cases *within the current "Related Test Case Group"*.
@@ -56,44 +44,40 @@ Your output should be a single continuous text stream, but internally structured
             * From these, identify smaller, logically connected subsets of test cases where each subset validates a specific, distinct user goal or a part of the overall behavior covered by this Group.
             * For each such identified subset, formulate **one User Story**.
             * **User Story Format:** Frame each User Story as: "As a [identified User Role], I want to [specific user goal relevant to this subset of test cases], so that [business value/reason for this specific goal]."
-            * **"So that..." (Business Value):** Infer a plausible business value for *this specific User Story's goal*. Clearly label it as inferred (e.g., "[Inferred Value]: ...") or state: "[Business value to be confirmed by stakeholders]."
-            * **Sequence:** If User Stories within this Document Scope have a logical flow, present them in that order.
-            * **Priority:** Assign a priority to the User Story (e.g., based on the highest priority of its supporting test cases).
+                * **"I want to..." Elaboration:** The "I want to..." part should describe the specific user goal. **Elaborate on this goal, drawing context from the `Description` or `Step/Action` of the supporting test cases to make the user's intent clearer, more descriptive, and well-contextualized.**
+                * **"So that..." (Business Value) Elaboration:** Infer a plausible business value for *this specific User Story's goal*. Clearly label it as inferred (e.g., "[Inferred Value]: ...") or state: "[Business value to be confirmed by stakeholders]." **Provide a detailed justification for this business value. Explain *how* this feature benefits the user or the system with specific examples or reasoning. Aim for more than a single, brief phrase; develop this into a clear statement of value.**
+            * **Sequence:** If User Stories within this Document Scope have a logical flow, present them in that order, explaining the sequence if necessary.
+            * **Priority:** Assign a priority to the User Story (e.g., based on the highest priority of its supporting test cases). **Briefly justify the priority assignment.**
         * For each User Story, list its **Acceptance Criteria (ACs)**:
-            * **Guidance for ACs (CRITICAL: Detailed, Traceable, and Scoped):**
-                * The ACs for each User Story **MUST be derived directly and explicitly ONLY from the test cases identified as supporting *that specific User Story within the current "Related Test Case Group"*.**
-                * **Maintain full clarity and avoid summarization of individual test case details.** Ensure all checks from the source test cases pertaining to this User Story are explicitly covered.
+            * **Guidance for ACs (CRITICAL: Exhaustively Detailed, Traceable, and Scoped):**
+                * The ACs for each User Story **MUST be derived directly, explicitly, and exhaustively ONLY from the test cases identified as supporting *that specific User Story within the current "Related Test Case Group"*.**
+                * **It is critical that ACs are not summarized or generalized.** Transcribe and rephrase the full intent and detail of each test case's `Step/Action`, `Data`, and `Expected Result` into the ACs.
+                * **For each step in `Step/Action`, consider if it implies intermediate states or checks that should be explicitly mentioned and elaborated upon.**
+                * **For each `Expected Result`, if it has broader implications for the system state or subsequent user actions, briefly elaborate on these implications.**
                 * Frame ACs clearly, for example:
-                    "Given [precondition from test case `Description`/context or Gherkin `Given`],
-                    When [test case `Step/Action` with `Data` or Gherkin `When`],
-                    Then [test case `Expected Result` or Gherkin `Then`]."
+                    "Given [precondition derived from test case `Description`/context or Gherkin `Given`, elaborated for full clarity],
+                    When [test case `Step/Action` (broken down and explained if complex) combined with `Data` (with examples if useful) or Gherkin `When`],
+                    Then [test case `Expected Result` (explained with its significance) or Gherkin `Then`]."
                 * **Crucially, reference the source test case `Key` for each AC** (e.g., "AC1 (Derived from Test Case Key: TC001): ...").
 
 **4. Other Relevant Information (Optional, for this Document Scope)**
-    * If specific NFRs, Data points, UI observations, or Assumptions are clearly tied *only* to this "Related Test Case Group," briefly mention them here, referencing relevant test case `Key`s. Otherwise, these can be summarized at a higher level if you produce a final global summary (though the primary request is multiple documents).
+    * If specific NFRs, Data points, UI observations, or Assumptions are clearly tied *only* to this "Related Test Case Group," **describe them in detail here**, referencing relevant test case `Key`s.
 
 **(End of Mini Requirements Document for this group. Use a clear separator before starting the next one if more groups are identified.)**
 
 ---
-**(Separator for the next document, e.g., `---` or `***`)**
+**(Separator for the next document, e.g., `=== DOCUMENT BREAK: [Name of Next Group] ===`)**
 
 **Document Title: Requirements for [Identified Theme/Feature of the NEXT Test Case Group]**
     *(And so on for all identified groups...)*
 
 **General Instructions for the entire process:**
 * **Identifying "Related Test Case Groups":** The primary method for identifying these high-level groups should be based on the `Component` field. Test cases with the same `Component` value likely belong to the same group and thus the same output document. If a single `Component` is extremely broad and contains vastly different functionalities, you may attempt to further sub-divide it based on strong thematic clusters in the `Summary` and `Description` fields to form distinct groups. Clearly state the basis for each group (e.g., "This document covers test cases related to Component: UserAuthentication").
-* The overarching goal is to break down the entire set of test cases into manageable, thematically coherent "Related Test Case Groups," and for each group, produce a focused requirements document containing one or more detailed User Stories with their specific, traceable ACs.
+* The overarching goal is to break down the entire set of test cases into manageable, thematically coherent "Related Test Case Groups," and for each group, produce a **focused, verbose, and highly detailed** requirements document containing one or more well-elaborated User Stories with their specific, traceable ACs.
+* **Adopt the persona of an extremely meticulous technical writer and business analyst** whose primary goal is to ensure no detail is overlooked and every point is thoroughly explained with sufficient context. When in doubt, **err on the side of providing more information and explanation rather than less.**
 * Maintain a clear, organized, and professional tone throughout all generated document sections.
-* When information is inferred, clearly indicate this.
+* When information is inferred, clearly indicate this and, where possible, elaborate on the basis for the inference.
 
 ---
 
-**核心挑战和提示要点：**
-
-1.  **定义和识别“相关测试用例组 (Related Test Case Group)”：** Prompt现在指示主要基于 `Component` 来划分这些大组。如果一个`Component`内部的功能差异很大，模型被允许尝试根据`Summary`和`Description`的强主题性进一步细分。这需要模型有较好的聚类和主题识别能力。
-2.  **两层信息提取和组织：** 模型需要先识别出这些大的“组”，然后针对每个“组”启动一次“内部文档生成流程”，在这个流程中再从该组内的测试用例提炼出多个用户故事。
-3.  **输出格式：** 由于LLM通常是单一连续输出，Prompt指导用清晰的分隔符和标题来区分“多份文档”。
-
-这个Prompt的复杂度相当高，它要求模型执行一个嵌套的、迭代的逻辑。您在实际使用时，可能需要观察模型对“相关测试用例组”的划分是否符合您的预期。如果不符合，可能需要进一步细化关于如何定义这些“组”的指令，或者在输入数据中加入辅助信息（例如，一个明确的“Feature ID”列）来帮助模型划分。
-
-祝您好运！这无疑是一个非常有趣的挑战。
+这个版本的Prompt在之前版本的基础上，通过加粗和新增的指令，全方位地强调了对**详尽性 (exhaustiveness, comprehensiveness, verbosity, detail)** 的要求，并指导模型在每个环节（概述、用户故事、业务价值、验收标准等）都进行更充分的阐述和解释。希望这次能引导模型产出更符合您期望的详细内容！
