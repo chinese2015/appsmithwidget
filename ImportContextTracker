@@ -1,0 +1,186 @@
+package com.appsmith.server.imports.internal;
+
+import com.appsmith.server.services.ApplicationPageService;
+import com.appsmith.server.datasources.base.DatasourceService;
+import com.appsmith.server.newactions.base.NewActionService;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.function.Function;
+
+@Component
+@Slf4j
+@RequiredArgsConstructor
+public class ImportContextTracker {
+
+    private final ApplicationPageService applicationPageService;
+    private final NewActionService newActionService;
+    private final DatasourceService datasourceService;
+
+    /**
+     * Context to track all imported entities for potential rollback
+     */
+    @Data
+    public static class ImportContext {
+        private String importId;
+        private String workspaceId;
+        private List<String> createdArtifactIds = new ArrayList<>();
+        private List<String> createdPluginIds = new ArrayList<>();
+        private List<String> createdDatasourceIds = new ArrayList<>();
+        private List<String> createdPageIds = new ArrayList<>();
+        private List<String> createdActionIds = new ArrayList<>();
+        private boolean isCosmosDB;
+
+        public ImportContext(String workspaceId, boolean isCosmosDB) {
+            this.importId = UUID.randomUUID().toString();
+            this.workspaceId = workspaceId;
+            this.isCosmosDB = isCosmosDB;
+        }
+
+        public void trackArtifact(String artifactId) {
+            if (artifactId != null) {
+                createdArtifactIds.add(artifactId);
+            }
+        }
+
+        public void trackPlugin(String pluginId) {
+            if (pluginId != null) {
+                createdPluginIds.add(pluginId);
+            }
+        }
+
+        public void trackDatasource(String datasourceId) {
+            if (datasourceId != null) {
+                createdDatasourceIds.add(datasourceId);
+            }
+        }
+
+        public void trackPage(String pageId) {
+            if (pageId != null) {
+                createdPageIds.add(pageId);
+            }
+        }
+
+        public void trackAction(String actionId) {
+            if (actionId != null) {
+                createdActionIds.add(actionId);
+            }
+        }
+    }
+
+    /**
+     * Execute import operation with rollback capability for CosmosDB environment
+     */
+    public <T> Mono<T> executeWithRollback(String workspaceId, boolean isCosmosDB,
+                                          Function<ImportContext, Mono<T>> operation) {
+        ImportContext context = new ImportContext(workspaceId, isCosmosDB);
+
+        return operation.apply(context)
+                .onErrorResume(error -> {
+                    log.error("Import failed, starting rollback for import {}", context.getImportId(), error);
+                    return rollbackImportedData(context)
+                            .doOnSuccess(v -> log.info("Rollback completed for import {}", context.getImportId()))
+                            .doOnError(rollbackError -> log.error("Rollback failed for import {}",
+                                    context.getImportId(), rollbackError))
+                            .then(Mono.error(error)); // Re-throw original error
+                });
+    }
+
+    /**
+     * Rollback all imported data in reverse dependency order
+     */
+    private Mono<Void> rollbackImportedData(ImportContext context) {
+        return Mono.empty()
+                // 1. Delete Actions first (depend on Pages)
+                .then(rollbackActions(context))
+                // 2. Delete Pages (depend on Applications)
+                .then(rollbackPages(context))
+                // 3. Delete Datasources
+                .then(rollbackDatasources(context))
+                // 4. Finally delete Applications
+                .then(rollbackApplications(context))
+                .doOnSuccess(v -> log.info("Successfully rolled back all imported data for import {}",
+                        context.getImportId()))
+                .doOnError(error -> log.error("Failed to complete rollback for import {}",
+                        context.getImportId(), error));
+    }
+
+    private Mono<Void> rollbackActions(ImportContext context) {
+        if (context.getCreatedActionIds().isEmpty()) {
+            return Mono.empty();
+        }
+
+        return Flux.fromIterable(context.getCreatedActionIds())
+                .flatMap(actionId ->
+                        newActionService.deleteUnpublishedAction(actionId)
+                                .doOnSuccess(v -> log.debug("Rolled back action {}", actionId))
+                                .onErrorResume(error -> {
+                                    log.warn("Failed to rollback action {}: {}", actionId, error.getMessage());
+                                    return Mono.empty(); // Continue with others, don't stop for single failure
+                                })
+                )
+                .then()
+                .doOnSuccess(v -> log.info("Rolled back {} actions", context.getCreatedActionIds().size()));
+    }
+
+    private Mono<Void> rollbackPages(ImportContext context) {
+        if (context.getCreatedPageIds().isEmpty()) {
+            return Mono.empty();
+        }
+
+        return Flux.fromIterable(context.getCreatedPageIds())
+                .flatMap(pageId ->
+                        applicationPageService.deleteUnpublishedPage(pageId)
+                                .doOnSuccess(v -> log.debug("Rolled back page {}", pageId))
+                                .onErrorResume(error -> {
+                                    log.warn("Failed to rollback page {}: {}", pageId, error.getMessage());
+                                    return Mono.empty();
+                                })
+                )
+                .then()
+                .doOnSuccess(v -> log.info("Rolled back {} pages", context.getCreatedPageIds().size()));
+    }
+
+    private Mono<Void> rollbackDatasources(ImportContext context) {
+        if (context.getCreatedDatasourceIds().isEmpty()) {
+            return Mono.empty();
+        }
+
+        return Flux.fromIterable(context.getCreatedDatasourceIds())
+                .flatMap(datasourceId ->
+                        datasourceService.archiveById(datasourceId)
+                                .doOnSuccess(v -> log.debug("Rolled back datasource {}", datasourceId))
+                                .onErrorResume(error -> {
+                                    log.warn("Failed to rollback datasource {}: {}", datasourceId, error.getMessage());
+                                    return Mono.empty();
+                                })
+                )
+                .then()
+                .doOnSuccess(v -> log.info("Rolled back {} datasources", context.getCreatedDatasourceIds().size()));
+    }
+
+    private Mono<Void> rollbackApplications(ImportContext context) {
+        if (context.getCreatedArtifactIds().isEmpty()) {
+            return Mono.empty();
+        }
+
+        return Flux.fromIterable(context.getCreatedArtifactIds())
+                .flatMap(appId ->
+                        applicationPageService.deleteApplication(appId)
+                                .doOnSuccess(v -> log.debug("Rolled back application {}", appId))
+                                .onErrorResume(error -> {
+                                    log.warn("Failed to rollback application {}: {}", appId, error.getMessage());
+                                    return Mono.empty();
+                                })
+                )
+                .then()
+                .doOnSuccess(v -> log.info("Rolled back {} applications", context.getCreatedArtifactIds().size()));
+    }
+} 
