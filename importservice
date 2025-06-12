@@ -36,6 +36,7 @@ import com.google.gson.GsonBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.boot.autoconfigure.mongo.MongoProperties;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.Part;
@@ -49,8 +50,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -72,6 +71,8 @@ public class ImportServiceCEImpl implements ImportServiceCE {
     private final ArtifactExchangeJsonAdapter artifactExchangeJsonAdapter;
     private final JsonSchemaMigration jsonSchemaMigration;
     private final DryOperationRepository dryOperationRepository;
+    private final ImportContextTracker importContextTracker;
+    private final MongoProperties mongoProperties;
 
     /**
      * This method provides the importService specific to the artifact based on the ArtifactType.
@@ -399,162 +400,6 @@ public class ImportServiceCEImpl implements ImportServiceCE {
      * @param appendToArtifact     Indicates whether artifactExchangeJson will be appended to the existing application or not.
      * @return The updated artifact stored in MongoDB.
      */
-    // private Mono<Artifact> importArtifactInWorkspace(
-    //         String workspaceId,
-    //         ArtifactExchangeJson artifactExchangeJson,
-    //         String branchedArtifactId,
-    //         boolean appendToArtifact,
-    //         ImportArtifactPermissionProvider permissionProvider,
-    //         Set<String> permissionGroups) {
-    //
-    //     ArtifactBasedImportService<?, ?, ?> artifactBasedImportService =
-    //             getArtifactBasedImportService(artifactExchangeJson);
-    //
-    //     Map<String, String> artifactSpecificConstantsMap = artifactBasedImportService.getArtifactSpecificConstantsMap();
-    //
-    //     String artifactContextString = artifactSpecificConstantsMap.get(FieldName.ARTIFACT_CONTEXT);
-    //
-    //     // step 1: Schema Migration
-    //     Mono<? extends ArtifactExchangeJson> migratedArtifactJsonMono = artifactBasedImportService
-    //             .migrateArtifactExchangeJson(branchedArtifactId, artifactExchangeJson)
-    //             .flatMap(importedDoc -> {
-    //                 // Step 2: Validation of artifact Json
-    //                 // check for validation error and raise exception if error found
-    //                 String errorField = validateArtifactExchangeJson(importedDoc);
-    //                 if (!errorField.isEmpty()) {
-    //                     log.error("Error in importing {}. Field {} is missing", artifactContextString, errorField);
-    //
-    //                     if (errorField.equals(artifactContextString)) {
-    //                         return Mono.error(new AppsmithException(
-    //                                 AppsmithError.VALIDATION_FAILURE,
-    //                                 "Field '" + artifactContextString
-    //                                         + ImportExportConstants.ARTIFACT_JSON_IMPORT_VALIDATION_ERROR_MESSAGE));
-    //                     }
-    //
-    //                     return Mono.error(new AppsmithException(
-    //                             AppsmithError.VALIDATION_FAILURE,
-    //                             "Field '" + errorField + "' is missing in the JSON."));
-    //                 }
-    //
-    //                 artifactBasedImportService.syncClientAndSchemaVersion(importedDoc);
-    //                 return Mono.just(importedDoc);
-    //             })
-    //             .cache();
-    //
-    //     ImportingMetaDTO importingMetaDTO = new ImportingMetaDTO(
-    //             workspaceId,
-    //             artifactContextString,
-    //             branchedArtifactId,
-    //             null,
-    //             null,
-    //             new ArrayList<>(),
-    //             appendToArtifact,
-    //             false,
-    //             permissionProvider,
-    //             permissionGroups);
-    //
-    //     MappedImportableResourcesDTO mappedImportableResourcesDTO = new MappedImportableResourcesDTO();
-    //
-    //     Mono<Workspace> workspaceMono = workspaceService
-    //             .findById(workspaceId, permissionProvider.getRequiredPermissionOnTargetWorkspace())
-    //             .switchIfEmpty(Mono.defer(() -> {
-    //                 log.error(
-    //                         "No workspace found with id: {} and permission: {}",
-    //                         workspaceId,
-    //                         permissionProvider.getRequiredPermissionOnTargetWorkspace());
-    //                 return Mono.error(new AppsmithException(
-    //                         AppsmithError.ACL_NO_RESOURCE_FOUND, FieldName.WORKSPACE, workspaceId));
-    //             }))
-    //             .cache();
-    //
-    //     Mono<User> currUserMono = sessionUserService.getCurrentUser().cache();
-    //
-    //     // Start the stopwatch to log the execution time
-    //     Stopwatch stopwatch = new Stopwatch(AnalyticsEvents.IMPORT.getEventName());
-    //
-    //     // Get a list of all branched application ids that will be used to find existing synced entities for all
-    //     // branch aware resources getting imported
-    //     Mono<List<String>> branchedArtifactIdsMono = Mono.justOrEmpty(branchedArtifactId)
-    //             .flatMap(branchedArtifactId1 -> artifactBasedImportService
-    //                     .getBranchedArtifactIdsByBranchedArtifactId(branchedArtifactId1)
-    //                     .collectList())
-    //             .switchIfEmpty(Mono.just(List.of()))
-    //             .doOnNext(importingMetaDTO::setBranchedArtifactIds);
-    //
-    //     final Mono<? extends Artifact> resultMono = migratedArtifactJsonMono.flatMap(importedDoc -> {
-    //
-    //         // this would import customJsLibs for all type of artifacts
-    //         Mono<Void> artifactSpecificImportableEntities =
-    //                 artifactBasedImportService.generateArtifactSpecificImportableEntities(
-    //                         importedDoc, importingMetaDTO, mappedImportableResourcesDTO);
-    //
-    //         /*
-    //         Calling the workspaceMono first to avoid creating multiple mongo transactions.
-    //         If the first db call inside a transaction is a Flux, then there's a chance of creating multiple mongo
-    //         transactions which will lead to NoSuchTransaction exception.
-    //         */
-    //         final Mono<? extends Artifact> importableArtifactMono = workspaceMono
-    //                 .then(Mono.defer(() -> Mono.when(branchedArtifactIdsMono, artifactSpecificImportableEntities)))
-    //                 .then(Mono.defer(() -> artifactBasedImportService.updateAndSaveArtifactInContext(
-    //                         importedDoc.getArtifact(), importingMetaDTO, mappedImportableResourcesDTO, currUserMono)))
-    //                 .doOnNext(artifact -> {
-    //                     GitArtifactMetadata gitArtifactMetadata = artifact.getGitArtifactMetadata();
-    //                     if (gitArtifactMetadata != null) {
-    //                         importingMetaDTO.setRefType(gitArtifactMetadata.getRefType());
-    //                         importingMetaDTO.setRefName(gitArtifactMetadata.getRefName());
-    //                     }
-    //                 })
-    //                 .cache();
-    //
-    //         final Mono<? extends Artifact> importMono = importableArtifactMono
-    //                 .then(Mono.defer(() -> generateImportableEntities(
-    //                         importingMetaDTO,
-    //                         mappedImportableResourcesDTO,
-    //                         workspaceMono,
-    //                         importableArtifactMono,
-    //                         importedDoc)))
-    //                 .then(importableArtifactMono)
-    //                 .flatMap(importableArtifact -> updateImportableEntities(
-    //                         artifactBasedImportService,
-    //                         importableArtifact,
-    //                         mappedImportableResourcesDTO,
-    //                         importingMetaDTO))
-    //                 .flatMap(importableArtifact ->
-    //                         updateImportableArtifact(artifactBasedImportService, importableArtifact))
-    //                 .onErrorResume(throwable -> {
-    //                     String errorMessage = ImportExportUtils.getErrorMessage(throwable);
-    //                     log.error("Error importing {}. Error: {}", artifactContextString, errorMessage, throwable);
-    //                     return Mono.error(new AppsmithException(
-    //                             AppsmithError.GENERIC_JSON_IMPORT_ERROR, workspaceId, errorMessage));
-    //                 })
-    //                 // execute dry run for datasource
-    //                 .flatMap(importableArtifact -> dryOperationRepository
-    //                         .executeAllDbOps(mappedImportableResourcesDTO)
-    //                         .thenReturn(importableArtifact))
-    //                 .as(transactionalOperator::transactional);
-    //
-    //         return importMono
-    //                 .flatMap(importableArtifact -> sendImportedContextAnalyticsEvent(
-    //                         artifactBasedImportService, importableArtifact, AnalyticsEvents.IMPORT))
-    //                 .zipWith(currUserMono)
-    //                 .flatMap(tuple -> {
-    //                     Artifact importableArtifact = tuple.getT1();
-    //                     User user = tuple.getT2();
-    //                     stopwatch.stopTimer();
-    //                     stopwatch.stopAndLogTimeInMillis();
-    //                     return sendImportRelatedAnalyticsEvent(importedDoc, importableArtifact, stopwatch, user);
-    //                 });
-    //     });
-    //
-    //     // Import Context is currently a slow API because it needs to import and create context, pages, actions
-    //     // and action collection. This process may take time and the client may cancel the request. This leads to the
-    //     // flow getting stopped midway producing corrupted objects in DB. The following ensures that even though the
-    //     // client may have refreshes the page, the imported context is available and is in sane state.
-    //     // To achieve this, we use a synchronous sink which does not take subscription cancellations into account. This
-    //     // means that even if the subscriber has cancelled its subscription, the create method still generates its
-    //     // event.
-    //     return Mono.create(sink -> resultMono.subscribe(sink::success, sink::error, null, sink.currentContext()));
-    // }
     private Mono<Artifact> importArtifactInWorkspace(
             String workspaceId,
             ArtifactExchangeJson artifactExchangeJson,
@@ -563,17 +408,71 @@ public class ImportServiceCEImpl implements ImportServiceCE {
             ImportArtifactPermissionProvider permissionProvider,
             Set<String> permissionGroups) {
 
-        // Saga Pattern Implementation for CosmosDB compatibility
-        // This method orchestrates a series of steps. If any step fails,
-        // it triggers a series of compensation actions in reverse order
-        // to ensure data consistency without a distributed transaction.
+        ArtifactBasedImportService<?, ?, ?> artifactBasedImportService =
+                getArtifactBasedImportService(artifactExchangeJson);
+
+        Map<String, String> artifactSpecificConstantsMap = artifactBasedImportService.getArtifactSpecificConstantsMap();
+
+        String artifactContextString = artifactSpecificConstantsMap.get(FieldName.ARTIFACT_CONTEXT);
+
+        boolean isCosmosDB = isCosmosDB();
+
+        if (!isCosmosDB) {
+            // MongoDB environment, use original transaction logic
+            return importArtifactInWorkspaceInternal(workspaceId, artifactExchangeJson,
+                    branchedArtifactId, appendToArtifact, permissionProvider, permissionGroups)
+                    .as(transactionalOperator::transactional);
+        }
+
+        // CosmosDB environment, use tracking rollback mechanism
+        return importContextTracker.executeWithRollback(workspaceId, isCosmosDB, context ->
+                importArtifactInWorkspaceWithTracking(context, workspaceId, artifactExchangeJson,
+                        branchedArtifactId, appendToArtifact, permissionProvider, permissionGroups)
+        );
+    }
+
+    private Mono<Artifact> importArtifactInWorkspaceInternal(
+            String workspaceId,
+            ArtifactExchangeJson artifactExchangeJson,
+            String branchedArtifactId,
+            boolean appendToArtifact,
+            ImportArtifactPermissionProvider permissionProvider,
+            Set<String> permissionGroups) {
 
         ArtifactBasedImportService<?, ?, ?> artifactBasedImportService =
                 getArtifactBasedImportService(artifactExchangeJson);
+
         Map<String, String> artifactSpecificConstantsMap = artifactBasedImportService.getArtifactSpecificConstantsMap();
+
         String artifactContextString = artifactSpecificConstantsMap.get(FieldName.ARTIFACT_CONTEXT);
 
-        // Meta DTOs to hold state across the Saga
+        // step 1: Schema Migration
+        Mono<? extends ArtifactExchangeJson> migratedArtifactJsonMono = artifactBasedImportService
+                .migrateArtifactExchangeJson(branchedArtifactId, artifactExchangeJson)
+                .flatMap(importedDoc -> {
+                    // Step 2: Validation of artifact Json
+                    // check for validation error and raise exception if error found
+                    String errorField = validateArtifactExchangeJson(importedDoc);
+                    if (!errorField.isEmpty()) {
+                        log.error("Error in importing {}. Field {} is missing", artifactContextString, errorField);
+
+                        if (errorField.equals(artifactContextString)) {
+                            return Mono.error(new AppsmithException(
+                                    AppsmithError.VALIDATION_FAILURE,
+                                    "Field '" + artifactContextString
+                                            + ImportExportConstants.ARTIFACT_JSON_IMPORT_VALIDATION_ERROR_MESSAGE));
+                        }
+
+                        return Mono.error(new AppsmithException(
+                                AppsmithError.VALIDATION_FAILURE,
+                                "Field '" + errorField + "' is missing in the JSON."));
+                    }
+
+                    artifactBasedImportService.syncClientAndSchemaVersion(importedDoc);
+                    return Mono.just(importedDoc);
+                })
+                .cache();
+
         ImportingMetaDTO importingMetaDTO = new ImportingMetaDTO(
                 workspaceId,
                 artifactContextString,
@@ -585,9 +484,9 @@ public class ImportServiceCEImpl implements ImportServiceCE {
                 false,
                 permissionProvider,
                 permissionGroups);
+
         MappedImportableResourcesDTO mappedImportableResourcesDTO = new MappedImportableResourcesDTO();
 
-        // Mono providers for resources needed across the Saga
         Mono<Workspace> workspaceMono = workspaceService
                 .findById(workspaceId, permissionProvider.getRequiredPermissionOnTargetWorkspace())
                 .switchIfEmpty(Mono.defer(() -> {
@@ -599,154 +498,337 @@ public class ImportServiceCEImpl implements ImportServiceCE {
                             AppsmithError.ACL_NO_RESOURCE_FOUND, FieldName.WORKSPACE, workspaceId));
                 }))
                 .cache();
+
         Mono<User> currUserMono = sessionUserService.getCurrentUser().cache();
+
+        // Start the stopwatch to log the execution time
         Stopwatch stopwatch = new Stopwatch(AnalyticsEvents.IMPORT.getEventName());
 
-        // Using AtomicReference to hold the final artifact and flags for compensation
-        AtomicReference<Artifact> finalArtifactRef = new AtomicReference<>();
-        AtomicBoolean step1_artifactSaved = new AtomicBoolean(false);
-        AtomicBoolean step2_jsLibsImported = new AtomicBoolean(false);
-        AtomicBoolean step3_pluginsImported = new AtomicBoolean(false);
-        AtomicBoolean step4_datasourcesImported = new AtomicBoolean(false);
-        AtomicBoolean step5_contextIndependentImported = new AtomicBoolean(false);
-        AtomicBoolean step6_contextDependentImported = new AtomicBoolean(false);
-
-        Mono<? extends ArtifactExchangeJson> migratedArtifactJsonMono =
-                artifactBasedImportService.migrateArtifactExchangeJson(branchedArtifactId, artifactExchangeJson)
-                        .flatMap(this::validateArtifactExchangeJsonPostMigration)
-                        .doOnSuccess(artifactBasedImportService::syncClientAndSchemaVersion)
-                        .cache();
-
+        // Get a list of all branched application ids that will be used to find existing synced entities for all
+        // branch aware resources getting imported
         Mono<List<String>> branchedArtifactIdsMono = Mono.justOrEmpty(branchedArtifactId)
-                .flatMap(id -> artifactBasedImportService.getBranchedArtifactIdsByBranchedArtifactId(id).collectList())
+                .flatMap(branchedArtifactId1 -> artifactBasedImportService
+                        .getBranchedArtifactIdsByBranchedArtifactId(branchedArtifactId1)
+                        .collectList())
                 .switchIfEmpty(Mono.just(List.of()))
                 .doOnNext(importingMetaDTO::setBranchedArtifactIds);
 
-        final Mono<Artifact> sagaMono = migratedArtifactJsonMono.flatMap(importedDoc -> {
-            // This is the main Saga chain
-            Mono<? extends Artifact> importAndSaveArtifactMono = workspaceMono
-                    .then(branchedArtifactIdsMono)
-                    // STEP 1: Create the initial artifact shell
+        final Mono<? extends Artifact> resultMono = migratedArtifactJsonMono.flatMap(importedDoc -> {
+
+            // this would import customJsLibs for all type of artifacts
+            Mono<Void> artifactSpecificImportableEntities =
+                    artifactBasedImportService.generateArtifactSpecificImportableEntities(
+                            importedDoc, importingMetaDTO, mappedImportableResourcesDTO);
+
+            /*
+            Calling the workspaceMono first to avoid creating multiple mongo transactions.
+            If the first db call inside a transaction is a Flux, then there's a chance of creating multiple mongo
+            transactions which will lead to NoSuchTransaction exception.
+            */
+            final Mono<? extends Artifact> importableArtifactMono = workspaceMono
+                    .then(Mono.defer(() -> Mono.when(branchedArtifactIdsMono, artifactSpecificImportableEntities)))
                     .then(Mono.defer(() -> artifactBasedImportService.updateAndSaveArtifactInContext(
                             importedDoc.getArtifact(), importingMetaDTO, mappedImportableResourcesDTO, currUserMono)))
-                    .doOnSuccess(artifact -> {
-                        finalArtifactRef.set(artifact);
-                        step1_artifactSaved.set(true);
+                    .doOnNext(artifact -> {
                         GitArtifactMetadata gitArtifactMetadata = artifact.getGitArtifactMetadata();
                         if (gitArtifactMetadata != null) {
                             importingMetaDTO.setRefType(gitArtifactMetadata.getRefType());
                             importingMetaDTO.setRefName(gitArtifactMetadata.getRefName());
                         }
-                    });
-
-            return importAndSaveArtifactMono
-                    .flatMap(savedArtifact -> {
-                        Mono<? extends Artifact> importableArtifactMono = Mono.just(savedArtifact).cache();
-
-                        // STEP 2: Import Custom JS Libs
-                        return Mono.defer(() -> artifactBasedImportService.generateArtifactSpecificImportableEntities(
-                                        importedDoc, importingMetaDTO, mappedImportableResourcesDTO))
-                                .doOnSuccess(v -> step2_jsLibsImported.set(true))
-                                // STEP 3 & 4: Import artifact-agnostic entities (Plugins, Datasources)
-                                .then(Mono.defer(() -> generateArtifactIndependentImportableEntities(
-                                        importingMetaDTO,
-                                        mappedImportableResourcesDTO,
-                                        workspaceMono,
-                                        importableArtifactMono,
-                                        importedDoc,
-                                        step3_pluginsImported,
-                                        step4_datasourcesImported).then()))
-                                // STEP 5: Import artifact-specific but context-independent entities (e.g., Pages)
-                                .then(Mono.defer(() -> artifactBasedImportService
-                                        .generateArtifactContextIndependentImportableEntities(
-                                                importingMetaDTO,
-                                                mappedImportableResourcesDTO,
-                                                workspaceMono,
-                                                importableArtifactMono,
-                                                importedDoc).then()))
-                                .doOnSuccess(v -> step5_contextIndependentImported.set(true))
-                                // STEP 6: Import context-dependent entities (e.g., Actions)
-                                .then(Mono.defer(() -> artifactBasedImportService
-                                        .generateArtifactContextDependentImportableEntities(
-                                                importingMetaDTO,
-                                                mappedImportableResourcesDTO,
-                                                workspaceMono,
-                                                importableArtifactMono,
-                                                importedDoc).then()))
-                                .doOnSuccess(v -> step6_contextDependentImported.set(true))
-                                // STEP 7: Final updates to all imported entities
-                                .then(Mono.defer(() -> updateImportableEntities(
-                                        artifactBasedImportService,
-                                        savedArtifact,
-                                        mappedImportableResourcesDTO,
-                                        importingMetaDTO)))
-                                // STEP 8: Final update to the main artifact
-                                .flatMap(artifact -> updateImportableArtifact(artifactBasedImportService, artifact))
-                                // NOTE: The transactional operator and dry run are removed.
-                                // Each service is now responsible for its own persistence.
-                                .map(artifact -> (Artifact) artifact);
                     })
-                    // SAGA COMPENSATION TRIGGER
-                    .onErrorResume(error -> {
-                        log.error(
-                                "Saga failed while importing artifact to workspace {}. Starting compensation.",
-                                workspaceId,
-                                error);
-                                
-                        // It is crucial to get the artifact that was created to pass to compensation logic.
-                        Artifact savedArtifact = finalArtifactRef.get();
-                        Mono<Void> compensationChain = Mono.empty();
-                        
-                        // Compensate in reverse order of execution
-                        if (step6_contextDependentImported.get()) compensationChain = compensationChain.then(compensateContextDependent(mappedImportableResourcesDTO, savedArtifact));
-                        if (step5_contextIndependentImported.get()) compensationChain = compensationChain.then(compensateContextIndependent(mappedImportableResourcesDTO, savedArtifact));
-                        if (step4_datasourcesImported.get()) compensationChain = compensationChain.then(compensateDatasourceImport(mappedImportableResourcesDTO, savedArtifact));
-                        if (step3_pluginsImported.get()) compensationChain = compensationChain.then(compensatePluginImport(mappedImportableResourcesDTO, savedArtifact));
-                        if (step2_jsLibsImported.get()) compensationChain = compensationChain.then(compensateCustomJSLibImport(mappedImportableResourcesDTO, savedArtifact));
-                        if (step1_artifactSaved.get()) compensationChain = compensationChain.then(compensateArtifactSave(savedArtifact));
+                    .cache();
 
-                        return compensationChain.then(Mono.error(new AppsmithException(
-                                AppsmithError.GENERIC_JSON_IMPORT_ERROR,
-                                workspaceId,
-                                ImportExportUtils.getErrorMessage(error))));
+            final Mono<? extends Artifact> importMono = importableArtifactMono
+                    .then(Mono.defer(() -> generateImportableEntities(
+                            importingMetaDTO,
+                            mappedImportableResourcesDTO,
+                            workspaceMono,
+                            importableArtifactMono,
+                            importedDoc)))
+                    .then(importableArtifactMono)
+                    .flatMap(importableArtifact -> updateImportableEntities(
+                            artifactBasedImportService,
+                            importableArtifact,
+                            mappedImportableResourcesDTO,
+                            importingMetaDTO))
+                    .flatMap(importableArtifact ->
+                            updateImportableArtifact(artifactBasedImportService, importableArtifact))
+                    .onErrorResume(throwable -> {
+                        String errorMessage = ImportExportUtils.getErrorMessage(throwable);
+                        log.error("Error importing {}. Error: {}", artifactContextString, errorMessage, throwable);
+                        return Mono.error(new AppsmithException(
+                                AppsmithError.GENERIC_JSON_IMPORT_ERROR, workspaceId, errorMessage));
+                    })
+                    // execute dry run for datasource
+                    .flatMap(importableArtifact -> dryOperationRepository
+                            .executeAllDbOps(mappedImportableResourcesDTO)
+                            .thenReturn(importableArtifact));
+
+            return importMono
+                    .flatMap(importableArtifact -> sendImportedContextAnalyticsEvent(
+                            artifactBasedImportService, importableArtifact, AnalyticsEvents.IMPORT))
+                    .zipWith(currUserMono)
+                    .flatMap(tuple -> {
+                        Artifact importableArtifact = tuple.getT1();
+                        User user = tuple.getT2();
+                        stopwatch.stopTimer();
+                        stopwatch.stopAndLogTimeInMillis();
+                        return sendImportRelatedAnalyticsEvent(importedDoc, importableArtifact, stopwatch, user);
                     });
-            });
+        });
 
-        Mono<Artifact> finalMono = sagaMono
-                .flatMap(importableArtifact -> sendImportedContextAnalyticsEvent(
-                        artifactBasedImportService, importableArtifact, AnalyticsEvents.IMPORT))
-                .zipWith(currUserMono)
-                .flatMap(tuple -> {
-                    Artifact importableArtifact = tuple.getT1();
-                    User user = tuple.getT2();
-                    stopwatch.stopTimer();
-                    stopwatch.stopAndLogTimeInMillis();
-                    return sendImportRelatedAnalyticsEvent(
-                            artifactExchangeJson, importableArtifact, stopwatch, user);
-                });
-        
-        return Mono.create(sink -> finalMono.subscribe(sink::success, sink::error, null, sink.currentContext()));
+        // Import Context is currently a slow API because it needs to import and create context, pages, actions
+        // and action collection. This process may take time and the client may cancel the request. This leads to the
+        // flow getting stopped midway producing corrupted objects in DB. The following ensures that even though the
+        // client may have refreshes the page, the imported context is available and is in sane state.
+        // To achieve this, we use a synchronous sink which does not take subscription cancellations into account. This
+        // means that even if the subscriber has cancelled its subscription, the create method still generates its
+        // event.
+        return Mono.create(sink -> resultMono.subscribe(sink::success, sink::error, null, sink.currentContext()));
     }
 
-    // Placeholder for post-migration validation
-    private Mono<ArtifactExchangeJson> validateArtifactExchangeJsonPostMigration(ArtifactExchangeJson importedDoc) {
-        String errorField = validateArtifactExchangeJson(importedDoc);
-        if (!errorField.isEmpty()) {
-            String artifactContextString = getArtifactBasedImportService(importedDoc)
-                    .getArtifactSpecificConstantsMap()
-                    .get(FieldName.ARTIFACT_CONTEXT);
-            log.error("Error in importing {}. Field {} is missing", artifactContextString, errorField);
-            if (errorField.equals(artifactContextString)) {
-                return Mono.error(new AppsmithException(
-                        AppsmithError.VALIDATION_FAILURE,
-                        "Field '" + artifactContextString
-                                + ImportExportConstants.ARTIFACT_JSON_IMPORT_VALIDATION_ERROR_MESSAGE));
-            }
-            return Mono.error(new AppsmithException(
-                    AppsmithError.VALIDATION_FAILURE,
-                    "Field '" + errorField + "' is missing in the JSON."));
+    /**
+     * Import artifact with tracking for CosmosDB environment rollback support
+     */
+    private Mono<Artifact> importArtifactInWorkspaceWithTracking(
+            ImportContextTracker.ImportContext context,
+            String workspaceId,
+            ArtifactExchangeJson artifactExchangeJson,
+            String branchedArtifactId,
+            boolean appendToArtifact,
+            ImportArtifactPermissionProvider permissionProvider,
+            Set<String> permissionGroups) {
+
+        ArtifactBasedImportService<?, ?, ?> artifactBasedImportService =
+                getArtifactBasedImportService(artifactExchangeJson);
+
+        Map<String, String> artifactSpecificConstantsMap = artifactBasedImportService.getArtifactSpecificConstantsMap();
+        String artifactContextString = artifactSpecificConstantsMap.get(FieldName.ARTIFACT_CONTEXT);
+
+        // step 1: Schema Migration
+        Mono<? extends ArtifactExchangeJson> migratedArtifactJsonMono = artifactBasedImportService
+                .migrateArtifactExchangeJson(branchedArtifactId, artifactExchangeJson)
+                .flatMap(importedDoc -> {
+                    // Step 2: Validation of artifact Json
+                    String errorField = validateArtifactExchangeJson(importedDoc);
+                    if (!errorField.isEmpty()) {
+                        log.error("Error in importing {}. Field {} is missing", artifactContextString, errorField);
+
+                        if (errorField.equals(artifactContextString)) {
+                            return Mono.error(new AppsmithException(
+                                    AppsmithError.VALIDATION_FAILURE,
+                                    "Field '" + artifactContextString
+                                            + ImportExportConstants.ARTIFACT_JSON_IMPORT_VALIDATION_ERROR_MESSAGE));
+                        }
+
+                        return Mono.error(new AppsmithException(
+                                AppsmithError.VALIDATION_FAILURE,
+                                "Field '" + errorField + "' is missing in the JSON."));
+                    }
+
+                    artifactBasedImportService.syncClientAndSchemaVersion(importedDoc);
+                    return Mono.just(importedDoc);
+                })
+                .cache();
+
+        ImportingMetaDTO importingMetaDTO = new ImportingMetaDTO(
+                workspaceId,
+                artifactContextString,
+                branchedArtifactId,
+                null,
+                null,
+                new ArrayList<>(),
+                appendToArtifact,
+                false,
+                permissionProvider,
+                permissionGroups);
+
+        MappedImportableResourcesDTO mappedImportableResourcesDTO = new MappedImportableResourcesDTO();
+
+        Mono<Workspace> workspaceMono = workspaceService
+                .findById(workspaceId, permissionProvider.getRequiredPermissionOnTargetWorkspace())
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.error(
+                            "No workspace found with id: {} and permission: {}",
+                            workspaceId,
+                            permissionProvider.getRequiredPermissionOnTargetWorkspace());
+                    return Mono.error(new AppsmithException(
+                            AppsmithError.ACL_NO_RESOURCE_FOUND, FieldName.WORKSPACE, workspaceId));
+                }))
+                .cache();
+
+        Mono<User> currUserMono = sessionUserService.getCurrentUser().cache();
+        Stopwatch stopwatch = new Stopwatch(AnalyticsEvents.IMPORT.getEventName());
+
+        Mono<List<String>> branchedArtifactIdsMono = Mono.justOrEmpty(branchedArtifactId)
+                .flatMap(branchedArtifactId1 -> artifactBasedImportService
+                        .getBranchedArtifactIdsByBranchedArtifactId(branchedArtifactId1)
+                        .collectList())
+                .switchIfEmpty(Mono.just(List.of()))
+                .doOnNext(importingMetaDTO::setBranchedArtifactIds);
+
+        final Mono<? extends Artifact> resultMono = migratedArtifactJsonMono.flatMap(importedDoc -> {
+
+            Mono<Void> artifactSpecificImportableEntities =
+                    artifactBasedImportService.generateArtifactSpecificImportableEntities(
+                            importedDoc, importingMetaDTO, mappedImportableResourcesDTO);
+
+            final Mono<? extends Artifact> importableArtifactMono = workspaceMono
+                    .then(Mono.defer(() -> Mono.when(branchedArtifactIdsMono, artifactSpecificImportableEntities)))
+                    .then(Mono.defer(() -> artifactBasedImportService.updateAndSaveArtifactInContext(
+                            importedDoc.getArtifact(), importingMetaDTO, mappedImportableResourcesDTO, currUserMono)))
+                    .doOnNext(artifact -> {
+                        // Track the created artifact for potential rollback
+                        context.trackArtifact(artifact.getId());
+                        log.debug("Tracked artifact {} for potential rollback", artifact.getId());
+
+                        GitArtifactMetadata gitArtifactMetadata = artifact.getGitArtifactMetadata();
+                        if (gitArtifactMetadata != null) {
+                            importingMetaDTO.setRefType(gitArtifactMetadata.getRefType());
+                            importingMetaDTO.setRefName(gitArtifactMetadata.getRefName());
+                        }
+                    })
+                    .cache();
+
+            final Mono<? extends Artifact> importMono = importableArtifactMono
+                    .then(Mono.defer(() -> generateImportableEntitiesWithTracking(
+                            context,
+                            importingMetaDTO,
+                            mappedImportableResourcesDTO,
+                            workspaceMono,
+                            importableArtifactMono,
+                            importedDoc)))
+                    .then(importableArtifactMono)
+                    .flatMap(importableArtifact -> updateImportableEntities(
+                            artifactBasedImportService,
+                            importableArtifact,
+                            mappedImportableResourcesDTO,
+                            importingMetaDTO))
+                    .flatMap(importableArtifact ->
+                            updateImportableArtifact(artifactBasedImportService, importableArtifact))
+                    .onErrorResume(throwable -> {
+                        String errorMessage = ImportExportUtils.getErrorMessage(throwable);
+                        log.error("Error importing {}. Error: {}", artifactContextString, errorMessage, throwable);
+                        return Mono.error(new AppsmithException(
+                                AppsmithError.GENERIC_JSON_IMPORT_ERROR, workspaceId, errorMessage));
+                    })
+                    .flatMap(importableArtifact -> dryOperationRepository
+                            .executeAllDbOps(mappedImportableResourcesDTO)
+                            .thenReturn(importableArtifact));
+
+            return importMono
+                    .flatMap(importableArtifact -> sendImportedContextAnalyticsEvent(
+                            artifactBasedImportService, importableArtifact, AnalyticsEvents.IMPORT))
+                    .zipWith(currUserMono)
+                    .flatMap(tuple -> {
+                        Artifact importableArtifact = tuple.getT1();
+                        User user = tuple.getT2();
+                        stopwatch.stopTimer();
+                        stopwatch.stopAndLogTimeInMillis();
+                        return sendImportRelatedAnalyticsEvent(importedDoc, importableArtifact, stopwatch, user);
+                    });
+        });
+
+        return Mono.create(sink -> resultMono.subscribe(sink::success, sink::error, null, sink.currentContext()));
+    }
+
+    /**
+     * Generate importable entities with tracking for rollback
+     */
+    private Mono<Void> generateImportableEntitiesWithTracking(
+            ImportContextTracker.ImportContext context,
+            ImportingMetaDTO importingMetaDTO,
+            MappedImportableResourcesDTO mappedImportableResourcesDTO,
+            Mono<Workspace> workspaceMono,
+            Mono<? extends Artifact> importableArtifactMono,
+            ArtifactExchangeJson artifactExchangeJson) {
+
+        ArtifactBasedImportService<?, ?, ?> contextBasedImportService =
+                getArtifactBasedImportService(artifactExchangeJson);
+
+        Flux<Void> artifactAgnosticImportables = generateArtifactIndependentImportableEntitiesWithTracking(
+                context,
+                importingMetaDTO,
+                mappedImportableResourcesDTO,
+                workspaceMono,
+                importableArtifactMono,
+                artifactExchangeJson);
+
+        Flux<Void> artifactSpecificImportables =
+                contextBasedImportService.generateArtifactContextIndependentImportableEntities(
+                        importingMetaDTO,
+                        mappedImportableResourcesDTO,
+                        workspaceMono,
+                        importableArtifactMono,
+                        artifactExchangeJson);
+
+        Flux<Void> artifactContextDependentImportables =
+                contextBasedImportService.generateArtifactContextDependentImportableEntities(
+                        importingMetaDTO,
+                        mappedImportableResourcesDTO,
+                        workspaceMono,
+                        importableArtifactMono,
+                        artifactExchangeJson);
+
+        return artifactAgnosticImportables
+                .thenMany(artifactSpecificImportables)
+                .thenMany(artifactContextDependentImportables)
+                .then();
+    }
+
+    /**
+     * Generate artifact independent entities with tracking
+     */
+    private Flux<Void> generateArtifactIndependentImportableEntitiesWithTracking(
+            ImportContextTracker.ImportContext context,
+            ImportingMetaDTO importingMetaDTO,
+            MappedImportableResourcesDTO mappedImportableResourcesDTO,
+            Mono<Workspace> workspaceMono,
+            Mono<? extends Artifact> importableArtifactMono,
+            ArtifactExchangeJson artifactExchangeJson) {
+
+        // Updates plugin map in importable resources - plugins are shared, so we don't track them for deletion
+        Mono<Void> installedPluginsMono = pluginImportableService.importEntities(
+                importingMetaDTO,
+                mappedImportableResourcesDTO,
+                workspaceMono,
+                importableArtifactMono,
+                artifactExchangeJson,
+                true);
+
+        // Track datasources for potential rollback
+        Mono<Void> importedDatasourcesMono = installedPluginsMono.then(datasourceImportableService.importEntities(
+                importingMetaDTO,
+                mappedImportableResourcesDTO,
+                workspaceMono,
+                importableArtifactMono,
+                artifactExchangeJson,
+                true))
+                .doOnSuccess(v -> {
+                    // Track created datasources from the mapped resources
+                    if (mappedImportableResourcesDTO.getDatasourceNameToIdMap() != null) {
+                        mappedImportableResourcesDTO.getDatasourceNameToIdMap().values().forEach(datasourceId -> {
+                            context.trackDatasource(datasourceId);
+                            log.debug("Tracked datasource {} for potential rollback", datasourceId);
+                        });
+                    }
+                });
+
+        return Flux.merge(List.of(importedDatasourcesMono));
+    }
+
+    /**
+     * Check if current environment is CosmosDB
+     */
+    private boolean isCosmosDB() {
+        if (mongoProperties == null || mongoProperties.getUri() == null) {
+            return false;
         }
-        return Mono.just(importedDoc);
+        String uri = mongoProperties.getUri();
+        return uri.contains(".mongo.cosmos.azure.com")
+                || uri.contains("cosmos.azure.")
+                || uri.contains("@cosmos.")
+                || (uri.contains("ssl=true") && uri.contains("retrywrites=false"));
     }
 
     /**
@@ -890,159 +972,6 @@ public class ImportServiceCEImpl implements ImportServiceCE {
                 true));
 
         return Flux.merge(List.of(importedDatasourcesMono));
-    }
-
-    // Overloaded method to set flags for saga compensation
-    protected Flux<Void> generateArtifactIndependentImportableEntities(
-            ImportingMetaDTO importingMetaDTO,
-            MappedImportableResourcesDTO mappedImportableResourcesDTO,
-            Mono<Workspace> workspaceMono,
-            Mono<? extends Artifact> importableArtifactMono,
-            ArtifactExchangeJson artifactExchangeJson,
-            AtomicBoolean pluginSuccess,
-            AtomicBoolean datasourceSuccess) {
-
-        // Updates plugin map in importable resources
-        Mono<Void> installedPluginsMono = pluginImportableService.importEntities(
-                importingMetaDTO,
-                mappedImportableResourcesDTO,
-                workspaceMono,
-                importableArtifactMono,
-                artifactExchangeJson,
-                true)
-                .doOnSuccess(v -> pluginSuccess.set(true));
-
-        // Requires pluginMap to be present in importable resources.
-        // Updates datasourceNameToIdMap in importable resources.
-        // Also directly updates required information in DB
-        Mono<Void> importedDatasourcesMono = installedPluginsMono.then(datasourceImportableService.importEntities(
-                importingMetaDTO,
-                mappedImportableResourcesDTO,
-                workspaceMono,
-                importableArtifactMono,
-                artifactExchangeJson,
-                true))
-                .doOnSuccess(v -> datasourceSuccess.set(true));
-
-        return Flux.merge(List.of(importedDatasourcesMono));
-    }
-
-    // --- SAGA COMPENSATION METHODS ---
-    // These methods implement the rollback logic for each step in the import Saga.
-    // They are called in reverse order when any step fails to maintain data consistency.
-
-    private Mono<Void> compensateArtifactSave(Artifact savedArtifact) {
-        log.warn("Saga Compensation: Deleting artifact with id {}", savedArtifact.getId());
-        if (savedArtifact == null || savedArtifact.getId() == null) {
-            return Mono.empty();
-        }
-        
-        // For applications, we need to use ApplicationPageService to properly clean up all resources
-        // Based on the code analysis, applicationPageService.deleteApplication is the correct method
-        return Mono.fromCallable(() -> {
-            // Need to access ApplicationPageService through Spring context or direct injection
-            // Since we can't access it directly here, we'll implement a fallback approach
-            log.warn("Saga Compensation: Artifact deletion needs to be implemented using ApplicationPageService.deleteApplication({})", savedArtifact.getId());
-            return null;
-        })
-        .doOnSuccess(deleted -> log.info("Saga Compensation: Artifact deletion attempted for {}", savedArtifact.getId()))
-        .doOnError(error -> log.error("Saga Compensation: Failed to delete artifact {}", savedArtifact.getId(), error))
-        .onErrorResume(error -> {
-            // Even if deletion fails, we don't want to fail the entire compensation chain
-            log.warn("Continuing compensation chain despite artifact deletion failure");
-            return Mono.empty();
-        })
-        .then();
-    }
-
-    private Mono<Void> compensateCustomJSLibImport(MappedImportableResourcesDTO resources, Artifact artifact) {
-        log.warn("Saga Compensation: Rolling back Custom JS Libs for artifact id {}", artifact.getId());
-        if (resources == null || resources.getInstalledJsLibsList() == null || resources.getInstalledJsLibsList().isEmpty()) {
-            return Mono.empty();
-        }
-
-        // Remove each installed JS library
-        return Flux.fromIterable(resources.getInstalledJsLibsList())
-                .doOnNext(jsLibDTO -> {
-                    // Log the JS library that needs to be removed
-                    log.debug("Saga Compensation: Need to remove JS Library: {}", jsLibDTO.getUidString());
-                    // Note: Actual removal would require CustomJSLibService injection
-                    // Implementation would be: customJSLibService.removeJSLibFromContext(artifact.getId(), CreatorContextType.APPLICATION, jsLib, true);
-                })
-                .doOnError(error -> log.error("Saga Compensation: Error processing JS libraries for removal", error))
-                .onErrorResume(error -> Flux.empty()) // Continue even if some libraries fail to process
-                .then()
-                .doOnSuccess(v -> log.debug("Saga Compensation: JS library removal logged"));
-    }
-
-    private Mono<Void> compensatePluginImport(MappedImportableResourcesDTO resources, Artifact artifact) {
-        log.warn("Saga Compensation: Rolling back Plugins for artifact id {}", artifact.getId());
-        // Plugins are typically system-level resources and are not deleted during compensation.
-        // They may be shared across multiple artifacts. In most cases, no compensation is needed.
-        // If your system has reference counting for plugins, you would decrement the count here.
-        
-        log.debug("Saga Compensation: Plugin compensation skipped (plugins are system-level resources)");
-        return Mono.empty();
-    }
-
-    private Mono<Void> compensateDatasourceImport(MappedImportableResourcesDTO resources, Artifact artifact) {
-        log.warn("Saga Compensation: Rolling back Datasources for artifact id {}", artifact.getId());
-        if (resources == null || resources.getDatasourceNameToIdMap() == null) {
-            return Mono.empty();
-        }
-
-        // Delete all datasources that were created during import
-        // We cannot directly access DatasourceService from here, so we'll log the compensation action
-        // In a real implementation, you would need to inject DatasourceService
-        return Flux.fromIterable(resources.getDatasourceNameToIdMap().values())
-                .doOnNext(datasourceId -> {
-                    log.debug("Saga Compensation: Need to delete datasource {}", datasourceId);
-                    // TODO: Inject DatasourceService and call datasourceService.archiveById(datasourceId)
-                    // Example implementation:
-                    // return datasourceService.archiveById(datasourceId)
-                    //     .doOnError(error -> log.error("Failed to delete datasource {}", datasourceId, error))
-                    //     .onErrorResume(error -> Mono.empty());
-                })
-                .then()
-                .doOnSuccess(v -> log.debug("Saga Compensation: Datasource deletion compensation completed"));
-    }
-
-    private Mono<Void> compensateContextIndependent(MappedImportableResourcesDTO resources, Artifact artifact) {
-        log.warn("Saga Compensation: Rolling back Pages/Context-Independent entities for artifact id {}", artifact.getId());
-        if (resources == null) {
-            return Mono.empty();
-        }
-
-        // Based on the code analysis, we need to delete pages, themes, etc.
-        // The pattern shows using NewPageService.archivePagesByApplicationId and ThemeService.archiveApplicationThemes
-        log.debug("Saga Compensation: Need to delete pages and themes for artifact {}", artifact.getId());
-        
-        // TODO: Inject required services and implement:
-        // return newPageService.archivePagesByApplicationId(artifact.getId(), pagePermission.getDeletePermission())
-        //        .then(themeService.archiveApplicationThemes((Application) artifact))
-        //        .then();
-        
-        return Mono.empty()
-                .doOnSuccess(result -> log.debug("Saga Compensation: Context-independent entities deletion logged"));
-    }
-
-    private Mono<Void> compensateContextDependent(MappedImportableResourcesDTO resources, Artifact artifact) {
-        log.warn("Saga Compensation: Rolling back Actions/Collections for artifact id {}", artifact.getId());
-        if (resources == null) {
-            return Mono.empty();
-        }
-
-        // Based on the code analysis, we need to delete actions and action collections
-        // The pattern shows using NewActionService.archiveActionsByApplicationId and ActionCollectionService.archiveActionCollectionByApplicationId
-        log.debug("Saga Compensation: Need to delete actions and action collections for artifact {}", artifact.getId());
-        
-        // TODO: Inject required services and implement:
-        // return actionCollectionService.archiveActionCollectionByApplicationId(artifact.getId(), actionPermission.getDeletePermission())
-        //        .then(newActionService.archiveActionsByApplicationId(artifact.getId(), actionPermission.getDeletePermission()))
-        //        .then();
-        
-        return Mono.empty()
-                .doOnSuccess(result -> log.debug("Saga Compensation: Context-dependent entities deletion logged"));
     }
 
     /**
